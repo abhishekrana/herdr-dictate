@@ -100,7 +100,7 @@ fn run() -> Result<ExitCode> {
         Command::Transcribe { file } => transcribe(&file).map(|()| ExitCode::SUCCESS),
         Command::Serve => {
             let settings = Settings::load().context("reading the plugin config")?;
-            server::serve(&settings, settings.server.idle()).context("serving")?;
+            server::serve(&settings).context("serving")?;
             Ok(ExitCode::SUCCESS)
         }
         Command::ServeStop => {

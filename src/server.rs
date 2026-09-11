@@ -23,6 +23,11 @@ const CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 /// Transcription is the slow part; the client waits rather than giving up.
 const CALL_TIMEOUT: Duration = Duration::from_secs(300);
 
+/// Written while a server is running, so `stop` can signal the right process.
+pub fn pid_path() -> PathBuf {
+    socket_path().with_extension("pid")
+}
+
 pub fn socket_path() -> PathBuf {
     let dir = std::env::var_os("XDG_RUNTIME_DIR")
         .filter(|v| !v.is_empty())
@@ -93,7 +98,8 @@ pub fn spawn() -> Result<()> {
 }
 
 /// Load the engine, then serve until idle for `idle`.
-pub fn serve(settings: &Settings, idle: Duration) -> Result<()> {
+pub fn serve(settings: &Settings) -> Result<()> {
+    let idle = settings.server.idle();
     let path = socket_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -108,6 +114,7 @@ pub fn serve(settings: &Settings, idle: Duration) -> Result<()> {
     tracing::info!(engine = engine.describe(), "model resident");
 
     let listener = UnixListener::bind(&path)?;
+    std::fs::write(pid_path(), std::process::id().to_string())?;
     let last = Arc::new(Mutex::new(Instant::now()));
     watchdog(Arc::clone(&last), idle, path.clone());
 
@@ -142,6 +149,7 @@ fn watchdog(last: Arc<Mutex<Instant>>, idle: Duration, socket: PathBuf) {
             if elapsed >= idle {
                 tracing::info!(?idle, "idle, exiting");
                 let _ = std::fs::remove_file(&socket);
+                let _ = std::fs::remove_file(pid_path());
                 std::process::exit(0);
             }
         }
@@ -194,17 +202,26 @@ fn respond(stream: &mut UnixStream, status: u8, text: &str) -> Result<()> {
     Ok(())
 }
 
-/// Ask a running server to exit. Absent is success.
+/// Stop a running server. Returns whether one was there to stop.
 pub fn stop() -> Result<bool> {
-    let path = socket_path();
-    if UnixStream::connect(&path).is_err() {
-        let _ = std::fs::remove_file(&path);
+    let (socket, pid_file) = (socket_path(), pid_path());
+    let pid = std::fs::read_to_string(&pid_file)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<i32>().ok());
+
+    // Unlink first, so nothing connects to a server that is going away.
+    let _ = std::fs::remove_file(&socket);
+    let _ = std::fs::remove_file(&pid_file);
+
+    let Some(pid) = pid.and_then(rustix::process::Pid::from_raw) else {
         return Ok(false);
+    };
+    match rustix::process::kill_process(pid, rustix::process::Signal::TERM) {
+        Ok(()) => Ok(true),
+        // Already gone: the files were stale, which is not a failure.
+        Err(rustix::io::Errno::SRCH) => Ok(false),
+        Err(err) => Err(Error::Model(format!("stopping the model server: {err}"))),
     }
-    // No shutdown verb: removing the socket and letting the watchdog expire
-    // would be slower than the client simply not using it again.
-    std::fs::remove_file(&path)?;
-    Ok(true)
 }
 
 #[cfg(test)]

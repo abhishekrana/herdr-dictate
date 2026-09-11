@@ -55,10 +55,10 @@ impl Indicator {
 
     /// Change what the pane shows.
     pub fn set(&self, label: impl Into<String>) {
+        let text = label.into();
         if let Ok(mut current) = self.label.lock() {
-            *current = label.into();
+            current.clone_from(&text);
         }
-        let text = self.label.lock().map(|l| l.clone()).unwrap_or_default();
         let _ = self.client.set_pane_label(&self.pane, &text, TTL);
     }
 }
