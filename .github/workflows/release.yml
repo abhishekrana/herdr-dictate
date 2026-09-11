@@ -1,0 +1,58 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # git-cliff reads the history
+
+      - run: scripts/install-deps.sh
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Gate
+        run: |
+          cargo fmt --all --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test --locked
+
+      # The GPU build runs on the CPU when no GPU is present, so one artifact
+      # serves both. It needs libvulkan1 at runtime.
+      - name: Build
+        run: cargo build --release --locked --features vulkan
+
+      - name: Package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          name="herdr-dictate-${version}-x86_64-unknown-linux-gnu"
+          mkdir -p "dist/$name"
+          cp target/release/herdr-dictate README.md LICENSE "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
+
+      - name: Release notes
+        run: |
+          cargo install git-cliff --locked --version 2.14.1
+          git cliff --config cliff.toml --latest --strip header -o NOTES.md
+          cat NOTES.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: NOTES.md
+          files: |
+            dist/*.tar.gz
+            dist/*.sha256
+          fail_on_unmatched_files: true

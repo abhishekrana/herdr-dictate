@@ -23,13 +23,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # cpal links ALSA; the same package source builds need.
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: scripts/install-deps.sh
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      # After the toolchain, never before: the cache key includes the rustc
-      # version, so caching first stores entries under the wrong key.
+      # After the toolchain: the cache key includes the rustc version.
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings
@@ -49,19 +47,31 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+        run: scripts/install-deps.sh
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --locked
 
+
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  # A bare machine building from source with only the documented dependencies.
+  build-from-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -f test/Dockerfile -t herdr-dictate-src .
 
   secrets:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
-          # gitleaks scans history, which needs more than the default shallow clone.
-          fetch-depth: 0
+          fetch-depth: 0 # gitleaks scans history
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
@@ -73,8 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # cpal links ALSA; the same package source builds need.
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: scripts/install-deps.sh
       - id: msrv
         run: echo "version=$(sed -n 's/^rust-version *= *"\(.*\)"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@master

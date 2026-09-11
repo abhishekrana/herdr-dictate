@@ -13,21 +13,21 @@ server is this binary. There is no sidecar to install and nothing to run yoursel
 
 ## Requirements
 
-Installing the plugin compiles it, so these are needed to _use_ it, not only to develop it:
+Installing the plugin compiles it, so these are needed to use it, not only to develop it.
 
 ```sh
-sudo apt-get install -y build-essential cmake glslc libasound2-dev libvulkan-dev
+scripts/install-deps.sh          # Debian and Ubuntu
 ```
 
-| dependency                | needed for                                 |
-| ------------------------- | ------------------------------------------ |
-| Rust 1.85+                | building                                   |
-| `build-essential` `cmake` | compiling whisper.cpp                      |
-| `libasound2-dev`          | microphone capture (ALSA)                  |
-| `libvulkan-dev` `glslc`   | GPU acceleration, `--features vulkan` only |
+| dependency                               | needed for                                 |
+| ---------------------------------------- | ------------------------------------------ |
+| Rust 1.85+                               | building                                   |
+| `build-essential` `cmake` `libclang-dev` | compiling whisper.cpp                      |
+| `libasound2-dev` `pkg-config`            | microphone capture (ALSA)                  |
+| `libvulkan-dev` `glslc`                  | GPU acceleration, `--features vulkan` only |
 
-At runtime only the shared libraries (`libasound2`, `libvulkan1`) and a GPU driver are required; a desktop system
-normally has both.
+At runtime only `libasound2`, `libvulkan1` and a GPU driver are needed; a desktop system normally has them. TLS roots
+are compiled in, so no system certificate store is required to fetch a model.
 
 ## Install
 
@@ -95,7 +95,7 @@ Measured on 4.0 s of speech:
 
 | model         | download | transcript      |
 | ------------- | -------- | --------------- |
-| tiny.en       | 74 MB    |                 |
+| tiny.en       | 74 MB    | mostly wrong    |
 | base.en-q8_0  | 77 MB    | two words wrong |
 | base.en       | 141 MB   | two words wrong |
 | small.en-q8_0 | 252 MB   | exact (default) |
