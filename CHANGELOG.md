@@ -30,12 +30,15 @@ Notable changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) spi
 
 ### Documentation
 
+- Trim the README to what a user needs (42c080a)
+- Put the GPU choice where the reader decides, without brittle numbers (6c0cdc7)
 - Correct how the plugin is set up after installing (8614a6a)
 - The gate and the rules a future change could get wrong (9a7cc2e)
 - Build requirements, and one GPU build for every vendor (53480df)
 
 ### Fixed
 
+- Install uses the GPU wherever it can, not only from a release (b37bdc4)
 - Release notes come from the pinned git-cliff (0c55d3d)
 - Identify our own process by its name, not by its path (4e69287)
 - Serve-stop stops the server, and tighten the audit (04ed898)
