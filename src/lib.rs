@@ -11,6 +11,7 @@ pub mod audio;
 pub mod capture;
 pub mod config;
 pub mod context;
+pub mod doctor;
 pub mod ipc;
 pub mod setup;
 

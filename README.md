@@ -55,8 +55,24 @@ herdr-dictate doctor               # report the wiring this plugin depends on
 
 ## Debugging
 
-`doctor` prints the socket it found, the pane Herdr says is focused, and the pane it would deliver to. Everything else
-goes to stderr, which Herdr captures:
+`herdr-dictate doctor` runs one named check per thing that can break, each with a remedy, and exits non-zero when one
+fails - so it works in a script as well as by eye:
+
+```
+ok    herdr.socket     ~/.config/herdr/herdr.sock
+ok    herdr.pane       wA:p1 (asked the server)
+ok    audio.device     Default Audio Device - will open at 16000 Hz mono I16
+warn  audio.level      ambient rms 355, speech threshold 300
+                       -> Room tone counts as speech, so auto-stop may not fire. Raise the threshold.
+ok    config.file      ~/.config/herdr/config.toml
+warn  config.bindings  unbound: toggle, toggle-send
+                       -> Run `herdr-dictate setup`.
+```
+
+It opens the microphone briefly to measure the room against the speech threshold, which is the check that catches a
+silent mic or a room too noisy for auto-stop before either becomes confusing.
+
+Everything else goes to stderr, which Herdr captures:
 
 ```sh
 herdr plugin log list --plugin abhishekrana.dictate

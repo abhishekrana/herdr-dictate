@@ -7,7 +7,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context as _, Result};
 use clap::{Parser, Subcommand};
-use herdr_dictate::{capture, config, context::Context, ipc::Client, setup};
+use herdr_dictate::{capture, config, context::Context, doctor, ipc::Client, setup};
 
 /// Distinguishes "declared but not built yet" from an unknown command.
 const EXIT_NOT_IMPLEMENTED: u8 = 3;
@@ -96,7 +96,7 @@ fn run() -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Command::Record { out, seconds } => record(&out, seconds).map(|()| ExitCode::SUCCESS),
-        Command::Doctor => doctor().map(|()| ExitCode::SUCCESS),
+        Command::Doctor => Ok(run_doctor()),
     }
 }
 
@@ -150,39 +150,12 @@ fn record(out: &std::path::Path, seconds: u64) -> Result<()> {
     Ok(())
 }
 
-fn doctor() -> Result<()> {
-    println!("herdr-dictate {}", env!("CARGO_PKG_VERSION"));
-    match Client::from_env() {
-        Ok(client) => {
-            println!("socket      {}", client.socket_path().display());
-            match client.focused_pane() {
-                Ok(pane) => println!("focused     {pane}"),
-                Err(err) => println!("focused     unavailable - {err}"),
-            }
-        }
-        Err(err) => println!("socket      {err}"),
+/// Exits non-zero when a check failed, so it is usable in a script.
+fn run_doctor() -> ExitCode {
+    let checks = doctor::run();
+    let _ = doctor::render(&checks, &mut std::io::stdout());
+    match doctor::worst(&checks) {
+        doctor::Status::Fail => ExitCode::FAILURE,
+        _ => ExitCode::SUCCESS,
     }
-    println!(
-        "context     {:?}",
-        Context::from_env().unwrap_or_default().target_pane()
-    );
-
-    match capture::describe_input() {
-        Ok(input) => println!("input       {input}"),
-        Err(err) => println!("input       unavailable - {err}"),
-    }
-
-    let path = config::config_path()?;
-    let existing = std::fs::read_to_string(&path).unwrap_or_default();
-    let missing = config::missing_bindings(&existing);
-    println!("config      {}", path.display());
-    if missing.is_empty() {
-        println!("bindings    all bound");
-    } else {
-        println!(
-            "bindings    {} unbound - run `herdr-dictate setup`",
-            missing.len()
-        );
-    }
-    Ok(())
 }
