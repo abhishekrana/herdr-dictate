@@ -33,14 +33,18 @@ are compiled in, so no system certificate store is required to fetch a model.
 
 ```sh
 herdr plugin install abhishekrana/herdr-dictate
-herdr-dictate setup       # writes the keybindings and reloads Herdr
+herdr plugin pane open --plugin abhishekrana.dictate --entrypoint setup
 ```
+
+`herdr plugin install` builds the plugin in its own managed checkout; the binary is not placed on `PATH`, so `setup`
+is opened as a plugin pane rather than run as a command.
 
 Herdr plugins cannot register their own keys, so `setup` adds them. It backs up `config.toml`, appends rather than
 rewriting so comments survive, refuses a file that is not valid TOML, and matches by action so a key you moved is not
 offered again.
 
-Defaults: `prefix+v` toggles, `prefix+shift+v` toggles and submits.
+Defaults: `prefix+v` toggles, `prefix+shift+v` toggles and submits. If those keys are already bound, edit the block
+`setup` shows you before accepting it.
 
 ## Usage
 
@@ -57,6 +61,15 @@ Defaults: `prefix+v` toggles, `prefix+shift+v` toggles and submits.
 
 Recording stops on a second press or after two seconds of silence. The pane shows `● dictating`, then `◌ transcribing`.
 The transcript is inserted, not submitted, unless you use `--submit`.
+
+After installing, `toggle`, `toggle-send` and `doctor` are Herdr actions - bind them with `setup`, or invoke one
+directly:
+
+```sh
+herdr plugin action invoke abhishekrana.dictate.doctor
+```
+
+The table above is the binary's own interface, used when developing or when running it from a clone.
 
 Exit codes: `0` success, `1` failure, `2` bad arguments.
 
@@ -123,7 +136,7 @@ mutually exclusive - never build with `--all-features`.
 ## Troubleshooting
 
 ```sh
-herdr-dictate doctor
+herdr plugin action invoke abhishekrana.dictate.doctor
 herdr plugin log list --plugin abhishekrana.dictate
 ```
 
