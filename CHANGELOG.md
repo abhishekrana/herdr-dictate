@@ -3,10 +3,12 @@
 Notable changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) spirit and versioned with
 [SemVer](https://semver.org/).
 
-## Unreleased
+## [0.1.0] - 2026-09-11
 
 ### Added
 
+- One gate script for both local runs and CI, on latest stable deps (b28cb2a)
+- One command to prepare a release, and a check that versions agree (d7a61bb)
 - Release workflow, dependency verification and supply-chain checks (b956c74)
 - Quantised models, and small.en-q8_0 as the default (c786e70)
 - Keep the model resident between dictations (dbb9e62)
@@ -21,12 +23,20 @@ Notable changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) spi
 - Plugin manifest and README (c964599)
 - Socket client and transcript delivery (aa1a99b)
 
+### Build
+
+- Allow the two permissive licences the tree actually uses (96f7559)
+
 ### Documentation
 
+- Correct how the plugin is set up after installing (8614a6a)
+- The gate and the rules a future change could get wrong (9a7cc2e)
 - Build requirements, and one GPU build for every vendor (53480df)
 
 ### Fixed
 
+- Release notes come from the pinned git-cliff (0c55d3d)
+- Identify our own process by its name, not by its path (4e69287)
 - Serve-stop stops the server, and tighten the audit (04ed898)
 - Ask whisper.cpp for the GPU, and stop retrying low-confidence windows (ed40a60)
 
