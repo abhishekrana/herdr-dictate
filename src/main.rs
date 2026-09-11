@@ -1,22 +1,53 @@
 //! Command-line entry point. Every subcommand is a plain function over the
-//! library, so `herdr-dictate <cmd>` is runnable with no terminal attached -
-//! which is what lets Herdr invoke it from a keybinding and a user debug it
-//! from a shell with the same code path.
+//! library, so Herdr invoking it from a keybinding and a user running it in a
+//! shell take the same path.
 
 use std::io::Read;
 use std::process::ExitCode;
 
 use anyhow::{Context as _, Result};
-use herdr_dictate::{context::Context, ipc::Client};
+use clap::{Parser, Subcommand};
+use herdr_dictate::{config, context::Context, ipc::Client, setup};
 
-const USAGE: &str = "\
-herdr-dictate - local dictation into the focused Herdr pane
+/// Distinguishes "declared but not built yet" from an unknown command.
+const EXIT_NOT_IMPLEMENTED: u8 = 3;
 
-USAGE:
-    herdr-dictate deliver [--submit]   read a transcript on stdin, type it into the target pane
-    herdr-dictate doctor               report the wiring this plugin depends on
-    herdr-dictate --version
-";
+#[derive(Parser)]
+#[command(
+    name = "herdr-dictate",
+    version,
+    about = "Local dictation into the focused Herdr pane"
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Start recording, or stop and insert the transcript.
+    Toggle {
+        /// Press Enter once the transcript lands.
+        #[arg(long)]
+        submit: bool,
+    },
+    /// Read a transcript on stdin and type it into the target pane.
+    Deliver {
+        #[arg(long)]
+        submit: bool,
+    },
+    /// Show the keybindings this plugin needs, and offer to write them.
+    Setup {
+        /// Write without asking.
+        #[arg(long, conflicts_with = "print")]
+        apply: bool,
+        /// Show the bindings and write nothing.
+        #[arg(long)]
+        print: bool,
+    },
+    /// Report the wiring this plugin depends on.
+    Doctor,
+}
 
 fn main() -> ExitCode {
     tracing_subscriber::fmt()
@@ -28,38 +59,38 @@ fn main() -> ExitCode {
         .init();
 
     match run() {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => code,
         Err(err) => {
-            // Plugin stderr is captured by `herdr plugin log list`, which is
-            // where a user looks when a keypress appears to do nothing.
+            // Herdr captures plugin stderr into `herdr plugin log list`.
             tracing::error!("{err:#}");
             ExitCode::FAILURE
         }
     }
 }
 
-fn run() -> Result<()> {
-    let mut args = std::env::args().skip(1);
-    match args.next().as_deref() {
-        Some("deliver") => {
-            let submit = args.any(|a| a == "--submit")
-                || std::env::var("HERDR_DICTATE_SUBMIT").is_ok_and(|v| v == "1");
-            deliver(submit)
+fn run() -> Result<ExitCode> {
+    match Cli::parse().command {
+        Command::Toggle { .. } => {
+            tracing::error!(
+                "toggle is declared but not built yet: capture and the speech engine are still to come"
+            );
+            Ok(ExitCode::from(EXIT_NOT_IMPLEMENTED))
         }
-        Some("doctor") => doctor(),
-        Some("--version" | "-V") => {
-            println!("herdr-dictate {}", env!("CARGO_PKG_VERSION"));
-            Ok(())
+        Command::Deliver { submit } => deliver(submit).map(|()| ExitCode::SUCCESS),
+        Command::Setup { apply, print } => {
+            let mode = match (apply, print) {
+                (true, _) => setup::Mode::Apply,
+                (_, true) => setup::Mode::Print,
+                _ => setup::Mode::Ask,
+            };
+            let path = config::config_path()?;
+            setup::run(mode, &path, &mut std::io::stdout()).context("writing the keybindings")?;
+            Ok(ExitCode::SUCCESS)
         }
-        Some("--help" | "-h") | None => {
-            print!("{USAGE}");
-            Ok(())
-        }
-        Some(other) => anyhow::bail!("unknown command {other:?}\n\n{USAGE}"),
+        Command::Doctor => doctor().map(|()| ExitCode::SUCCESS),
     }
 }
 
-/// Type a transcript read from stdin into the target pane.
 fn deliver(submit: bool) -> Result<()> {
     let mut text = String::new();
     std::io::stdin()
@@ -72,16 +103,14 @@ fn deliver(submit: bool) -> Result<()> {
     }
 
     let client = Client::from_env().context("connecting to Herdr")?;
-    let ctx = Context::from_env()?;
-    let pane = match ctx.target_pane() {
+    let pane = match Context::from_env()?.target_pane() {
         Some(pane) => pane,
         None => client
             .focused_pane()
             .context("asking Herdr which pane is focused")?,
     };
 
-    // A pane that has gone answers with pane_not_found rather than succeeding
-    // silently, so there is nothing to check before sending.
+    // A missing pane answers with pane_not_found rather than succeeding silently.
     client
         .send_text(&pane, text)
         .with_context(|| format!("typing into {pane}"))?;
@@ -106,7 +135,22 @@ fn doctor() -> Result<()> {
         }
         Err(err) => println!("socket      {err}"),
     }
-    let ctx = Context::from_env().unwrap_or_default();
-    println!("context     {:?}", ctx.target_pane());
+    println!(
+        "context     {:?}",
+        Context::from_env().unwrap_or_default().target_pane()
+    );
+
+    let path = config::config_path()?;
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let missing = config::missing_bindings(&existing);
+    println!("config      {}", path.display());
+    if missing.is_empty() {
+        println!("bindings    all bound");
+    } else {
+        println!(
+            "bindings    {} unbound - run `herdr-dictate setup`",
+            missing.len()
+        );
+    }
     Ok(())
 }

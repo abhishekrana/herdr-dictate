@@ -22,12 +22,36 @@ and send when you mean to. Submitting is a separate, explicit `--submit`.
 **Nothing is inferred from the CLI.** The plugin speaks the socket API directly, and every method name and parameter
 shape is taken from the bundled schema rather than from the shape of a shell command.
 
+## Install
+
+```sh
+herdr plugin install abhishekrana/herdr-dictate
+```
+
+Herdr plugins cannot register their own keys, so bind them once:
+
+```sh
+herdr-dictate setup          # shows the bindings, asks, writes, reloads the server
+```
+
+It keeps a `.bak`, appends rather than re-serialising so your comments survive, refuses to touch a config that is
+not valid TOML, and matches by action rather than by key - so a binding you moved is not offered again.
+
 ## Usage
 
 ```sh
+herdr-dictate toggle [--submit]    # start recording, or stop and insert the transcript
 herdr-dictate deliver [--submit]   # read a transcript on stdin, type it into the target pane
+herdr-dictate setup [--apply|--print]
 herdr-dictate doctor               # report the wiring this plugin depends on
 ```
+
+| exit | meaning |
+| ---- | ------- |
+| 0 | success |
+| 1 | failure |
+| 2 | unknown subcommand or bad arguments |
+| 3 | declared in the manifest, not built yet |
 
 ## Debugging
 

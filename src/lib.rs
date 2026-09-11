@@ -1,15 +1,20 @@
 //! Local speech-to-text dictation into the focused Herdr pane.
 //!
-//! The binary is a thin shell over this library so every stage is testable
+//! The binary is a thin shell over this library, so every stage is testable
 //! without a terminal, a microphone or a running Herdr server.
 
 #![forbid(unsafe_code)]
 
+use std::path::PathBuf;
+
+pub mod config;
 pub mod context;
 pub mod ipc;
+pub mod setup;
 
-/// Errors this plugin can report. Each variant is something a user can act on;
-/// anything else surfaces as its underlying cause.
+/// Namespace Herdr qualifies this plugin's actions and state directories with.
+pub const PLUGIN_ID: &str = "abhishekrana.dictate";
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("not running inside Herdr (HERDR_SOCKET_PATH is unset)")]
@@ -17,6 +22,9 @@ pub enum Error {
 
     #[error("Herdr reports no focused pane")]
     NoFocusedPane,
+
+    #[error("{0} is not valid TOML")]
+    ConfigUnparseable(PathBuf),
 
     #[error("herdr rpc {method}: {code}{}", if .message.is_empty() { String::new() } else { format!(" - {}", .message) })]
     Rpc {

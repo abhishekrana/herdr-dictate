@@ -116,8 +116,8 @@ impl Client {
         Ok(())
     }
 
-    /// The pane Herdr considers focused right now. Used only by entry points
-    /// that arrive without an invocation context, such as a global hotkey.
+    /// The pane Herdr considers focused. Used by entry points that arrive
+    /// without an invocation context, such as a global hotkey.
     pub fn focused_pane(&self) -> Result<String> {
         let snapshot = self.call("session.snapshot", json!({}))?;
         snapshot
@@ -125,5 +125,24 @@ impl Client {
             .and_then(Value::as_str)
             .map(ToOwned::to_owned)
             .ok_or(Error::NoFocusedPane)
+    }
+
+    /// Re-read config.toml in the running server. Returns its diagnostics.
+    pub fn reload_config(&self) -> Result<Vec<String>> {
+        let result = self.call("server.reload_config", json!({}))?;
+        Ok(result
+            .get("diagnostics")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|d| {
+                        d.as_str()
+                            .map(ToOwned::to_owned)
+                            .unwrap_or_else(|| d.to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 }
