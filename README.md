@@ -153,6 +153,23 @@ cargo test
 MSRV is declared in `Cargo.toml`. There is deliberately no `rust-toolchain.toml`, which would force every user onto one
 toolchain.
 
+## Releasing
+
+SemVer, with `v`-prefixed tags. A published tag is never moved; bump the patch instead.
+
+```sh
+scripts/release.sh v0.2.0     # sets the version in both manifests, regenerates CHANGELOG.md
+git commit -am "chore(release): v0.2.0"
+git tag -a v0.2.0 -m "herdr-dictate 0.2.0"
+git push && git push origin v0.2.0
+```
+
+The tag triggers `release.yml`, which re-runs the gate, builds with `--features vulkan`, and publishes a tarball and its
+checksum with notes generated from the commit log.
+
+`CHANGELOG.md` is generated from [Conventional Commits](https://www.conventionalcommits.org/): `feat`, `fix`, `perf`,
+`refactor`, `docs`, `test` and `build` appear; `ci` and `chore(release)` are filtered out.
+
 ## License
 
 MIT

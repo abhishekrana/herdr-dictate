@@ -29,6 +29,12 @@ jobs:
           components: rustfmt, clippy
       # After the toolchain: the cache key includes the rustc version.
       - uses: Swatinem/rust-cache@v2
+      - name: Manifest versions agree
+        run: |
+          cargo=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          plugin=$(grep -m1 '^version = ' herdr-plugin.toml | cut -d'"' -f2)
+          test "$cargo" = "$plugin" || { echo "Cargo.toml $cargo != herdr-plugin.toml $plugin"; exit 1; }
+
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings
       - name: doc

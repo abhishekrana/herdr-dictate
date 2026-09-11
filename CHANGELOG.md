@@ -3,10 +3,11 @@
 Notable changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) spirit and versioned with
 [SemVer](https://semver.org/).
 
-## [0.1.0] - 2026-09-11
+## Unreleased
 
 ### Added
 
+- Release workflow, dependency verification and supply-chain checks (b956c74)
 - Quantised models, and small.en-q8_0 as the default (c786e70)
 - Keep the model resident between dictations (dbb9e62)
 - Opt-in GPU backends, and what they are actually worth (ef183da)
