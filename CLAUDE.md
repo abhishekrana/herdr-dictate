@@ -10,6 +10,19 @@ this same binary. Linux only (macOS needs a resampler). Audio never leaves the m
 
 ## Commands
 
+The loop, cheapest first. Each step subsumes the one above it, so run only as far as the change warrants.
+
+```sh
+cargo check                               # logic only, no codegen
+cargo test                                # inline tests
+cargo build --profile fast                # runnable; skips the whole-graph optimisation
+scripts/check.sh                          # the gate, before committing
+```
+
+`release` is what ships and what the gate checks. `fast` exists for iteration: `lto` is paid on every release build
+and buys nothing until the binary runs - never ship it. The container step inside the gate rebuilds only when `src/`
+or the manifests change; docs, scripts and CI config do not reach it.
+
 ```sh
 scripts/install-deps.sh                   # build deps, Debian/Ubuntu (cmake, libclang-dev, libasound2-dev, libvulkan-dev, glslc)
 scripts/install-dev-tools.sh              # cargo-deny, git-cliff, the MSRV toolchain; versions pinned in scripts/versions.env
@@ -101,12 +114,6 @@ socket lives under `XDG_RUNTIME_DIR`.
   the full history.
 - **Build dependencies are user dependencies.** `herdr plugin install` compiles on the user's machine, so anything the
   build needs belongs in the README's Requirements rather than a contributor section.
-
-## Build profiles
-
-`release` ships and the gate checks it. `fast` (`cargo build --profile fast`) drops `lto` and keeps incremental state
-for iteration; `cargo check` is faster still when only the logic changed. Never ship `fast` - it skips the
-optimisation the model's speed depends on.
 
 ## Cutting a release
 
