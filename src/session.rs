@@ -31,17 +31,27 @@ pub struct Session {
     pub phase: Phase,
 }
 
+/// Where the recording state lives.
+///
+/// Herdr names it for a plugin process. Anything else - the tab bar running
+/// `status`, or a shell - has to find the same file, so the fallback is the
+/// directory Herdr itself would have given.
 pub fn state_path() -> Result<PathBuf> {
     let dir = match std::env::var_os("HERDR_PLUGIN_STATE_DIR").filter(|v| !v.is_empty()) {
         Some(dir) => PathBuf::from(dir),
-        None => {
-            let home = std::env::var_os("HOME")
-                .filter(|v| !v.is_empty())
-                .ok_or_else(|| std::io::Error::other("HOME is unset"))?;
-            PathBuf::from(home).join(".local/state").join(PLUGIN_ID)
-        }
+        None => state_home()?.join("herdr/plugins").join(PLUGIN_ID),
     };
     Ok(dir.join("recording.json"))
+}
+
+fn state_home() -> Result<PathBuf> {
+    if let Some(dir) = std::env::var_os("XDG_STATE_HOME").filter(|v| !v.is_empty()) {
+        return Ok(PathBuf::from(dir));
+    }
+    let home = std::env::var_os("HOME")
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| std::io::Error::other("HOME is unset"))?;
+    Ok(PathBuf::from(home).join(".local/state"))
 }
 
 /// The recording in progress, if one is actually still running.

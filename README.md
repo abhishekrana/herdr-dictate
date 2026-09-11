@@ -100,8 +100,9 @@ tab_bar_right = [
 The plugin is not on `PATH`, so the entry names the binary by its full path.
 `doctor` prints the line to paste, with the path filled in.
 
-`○ dictate` idle, `● dictate` recording, `◌ dictate` transcribing. The label never
-changes, so the entry keeps its width and cannot reflow the row beside it.
+`○` idle, `●` recording, `◌` while the model runs. Herdr strips control
+characters from a command entry, so the glyph carries the state rather than
+colour. The label never changes, so the entry keeps its width.
 
 Herdr has no clickable surface a plugin can add to, so the chip reports state
 and the key does the work.
