@@ -32,11 +32,18 @@ jobs:
           SKIP_DOCKER: "1"
 
   # A bare machine building from source with only the documented dependencies.
+  # A runner starts with no layers, so the cache is carried between runs.
   build-from-source:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: docker build -f test/Dockerfile -t herdr-dictate-src .
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: test/Dockerfile
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   secrets:
     runs-on: ubuntu-latest

@@ -27,7 +27,8 @@ RUN mkdir -p src \
     && cargo build --release --locked --features vulkan \
     && rm -rf src
 
-COPY . .
+# Only the crate: docs and scripts do not affect the build.
+COPY src/ src/
 
 RUN cargo build --release --locked
 RUN cargo build --release --locked --features vulkan
