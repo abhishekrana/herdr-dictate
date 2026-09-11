@@ -116,8 +116,7 @@ fn run() -> Result<ExitCode> {
 }
 
 /// One chip for the tab bar. Herdr strips control characters from a command
-/// entry, so the glyph carries the state: colour cannot. The label never
-/// changes, so the entry keeps its width and nothing beside it shifts.
+/// entry, so the glyph carries the state and the label holds the width.
 fn status() -> Result<()> {
     let label = match session::peek().context("reading the dictation state")? {
         Some(session) if session.phase == Phase::Transcribing => "\u{25cc} dictate",

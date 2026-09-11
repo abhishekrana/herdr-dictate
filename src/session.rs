@@ -11,8 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Error, PLUGIN_ID, Result};
 
-/// What the recorder is doing now. A dictation outlives the microphone: the
-/// model still has to run, and anything showing state has to say so.
+/// What the recorder is doing now. A dictation outlives the microphone.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Phase {
@@ -26,16 +25,14 @@ pub struct Session {
     pub pid: u32,
     pub pane: String,
     pub submit: bool,
-    /// Absent in a file written before phases existed, which reads as recording.
+    /// Missing reads as recording.
     #[serde(default)]
     pub phase: Phase,
 }
 
-/// Where the recording state lives.
-///
-/// Herdr names it for a plugin process. Anything else - the tab bar running
-/// `status`, or a shell - has to find the same file, so the fallback is the
-/// directory Herdr itself would have given.
+/// Where the recording state lives. Herdr names the directory for a plugin
+/// process; anything else has to resolve the same path, so the fallback is the
+/// directory Herdr would have given.
 pub fn state_path() -> Result<PathBuf> {
     let dir = match std::env::var_os("HERDR_PLUGIN_STATE_DIR").filter(|v| !v.is_empty()) {
         Some(dir) => PathBuf::from(dir),
@@ -100,10 +97,8 @@ fn write_state(session: &Session) -> Result<()> {
     Ok(())
 }
 
-/// Clear the state file, but only while it still names this recorder.
-///
-/// A press during transcription starts a new recording over the same file; the
-/// older process must not then delete the newer one's state.
+/// Clear the state file, but only while it still names this recorder: a press
+/// during transcription writes a new session over the same file.
 pub fn end(session: &Session) -> Result<()> {
     let path = state_path()?;
     match peek_at(&path)? {
@@ -213,7 +208,7 @@ mod tests {
     fn a_torn_file_is_reported_as_no_session_and_left_alone() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("recording.json");
-        // Half a write, which is what a reader racing a non-atomic write saw.
+        // Half a write, as a reader racing a non-atomic write would see.
         std::fs::write(&path, r#"{"pid":42,"pane":"w1"#).unwrap();
 
         assert!(peek_at(&path).unwrap().is_none());

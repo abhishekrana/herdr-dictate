@@ -17,8 +17,8 @@ RUN scripts/install-deps.sh && rm -rf /var/lib/apt/lists/*
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --no-modify-path --profile minimal
 
-# Dependencies first, against a stub crate. whisper.cpp is most of the build and
-# does not change when this crate does, so it stays cached across edits.
+# Dependencies first, against a stub crate: whisper.cpp is most of the build and
+# does not change when this crate does.
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir -p src \
     && echo 'fn main() {}' > src/main.rs \
