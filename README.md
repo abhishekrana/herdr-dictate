@@ -13,7 +13,8 @@ server is this binary. There is no sidecar to install and nothing to run yoursel
 
 ## Requirements
 
-Installing the plugin compiles it, so these are needed to use it, not only to develop it.
+Installing fetches the release binary when one matches your machine - x86_64 Linux with `libvulkan1` - and builds from
+source otherwise. A source build needs:
 
 ```sh
 scripts/install-deps.sh          # Debian and Ubuntu
@@ -36,8 +37,9 @@ herdr plugin install abhishekrana/herdr-dictate
 herdr plugin pane open --plugin abhishekrana.dictate --entrypoint setup
 ```
 
-`herdr plugin install` builds the plugin in its own managed checkout; the binary is not placed on `PATH`, so `setup`
-is opened as a plugin pane rather than run as a command.
+`herdr plugin install` puts the plugin in its own managed checkout and the binary is not placed on `PATH`, so `setup`
+is opened as a plugin pane rather than run as a command. It fetches the release binary when it can, and compiles
+whisper.cpp when it cannot, which takes about a minute.
 
 Herdr plugins cannot register their own keys, so `setup` adds them. It backs up `config.toml`, appends rather than
 rewriting so comments survive, refuses a file that is not valid TOML, and matches by action so a key you moved is not
@@ -170,19 +172,34 @@ skipped rather than failing. Pinned tool versions live in `scripts/versions.env`
 MSRV is `rust-version` in `Cargo.toml` and is checked by the gate. There is deliberately no `rust-toolchain.toml`, which
 would force every user onto one toolchain.
 
+## Verifying a release
+
+Release binaries are built by CI, never uploaded from a developer machine, and carry a signed provenance attestation
+binding them to the workflow, commit and repository:
+
+```sh
+gh attestation verify herdr-dictate-0.1.0-x86_64-unknown-linux-gnu.tar.gz --repo abhishekrana/herdr-dictate
+```
+
+A SHA-256 is published alongside each archive. The plugin's own install step checks it before using a downloaded binary,
+and builds from source if it does not match.
+
 ## Releasing
 
 SemVer, with `v`-prefixed tags. A published tag is never moved; bump the patch instead.
 
 ```sh
-scripts/release.sh v0.2.0     # sets the version in both manifests, regenerates CHANGELOG.md
+scripts/check.sh                              # must pass with nothing skipped
+scripts/release.sh v0.2.0                     # sets both manifests, regenerates CHANGELOG.md
+git diff                                      # review
 git commit -am "chore(release): v0.2.0"
 git tag -a v0.2.0 -m "herdr-dictate 0.2.0"
 git push && git push origin v0.2.0
+gh run watch                                  # release.yml builds and publishes
 ```
 
-The tag triggers `release.yml`, which re-runs the gate, builds with `--features vulkan`, and publishes a tarball and its
-checksum with notes generated from the commit log.
+The tag triggers `release.yml`, which re-runs the gate, builds with `--features vulkan`, publishes a tarball with its
+checksum and a provenance attestation, and writes the notes from the commit log.
 
 `CHANGELOG.md` is generated from [Conventional Commits](https://www.conventionalcommits.org/): `feat`, `fix`, `perf`,
 `refactor`, `docs`, `test` and `build` appear; `ci` and `chore(release)` are filtered out.

@@ -98,6 +98,34 @@ socket lives under `XDG_RUNTIME_DIR`.
 - **Build dependencies are user dependencies.** `herdr plugin install` compiles on the user's machine, so anything the
   build needs belongs in the README's Requirements rather than a contributor section.
 
+## Cutting a release
+
+Run these in order and stop at the first failure.
+
+1. **Preconditions.** `git status --porcelain` is empty and `git fetch && git rev-list --count origin/main..main` is
+   `0`. A release is cut from what is pushed.
+2. **Gate.** `scripts/check.sh` passes with **nothing skipped**. A skip means a tool is missing; install it with
+   `scripts/install-dev-tools.sh` rather than releasing unverified.
+3. **Version.** `git tag --list 'v*' --sort=-v:refname | head -1` is the previous one. SemVer against it; while on
+   `0.x`, a breaking change bumps the minor.
+4. **Prepare.** `scripts/release.sh vX.Y.Z` sets both manifests and regenerates `CHANGELOG.md`. It refuses a dirty
+   tree, a tag that exists, and a `git-cliff` that is not the pinned version.
+5. **Review.** `git diff` — the changelog should name every user-visible change since the previous tag, and both
+   manifests should carry the new version.
+6. **Commit and tag.**
+   ```sh
+   git commit -am "chore(release): vX.Y.Z"
+   git tag -a vX.Y.Z -m "herdr-dictate X.Y.Z"
+   git push && git push origin vX.Y.Z
+   ```
+7. **Watch.** `gh run watch` — the tag triggers `release.yml`, which re-runs the gate, builds with `--features
+   vulkan`, and publishes the tarball, its checksum and a provenance attestation. Needs `gh auth login`.
+8. **Verify what shipped.** `gh release view vX.Y.Z` lists the artifacts, and
+   `gh attestation verify <tarball> --repo abhishekrana/herdr-dictate` checks the provenance.
+
+If the workflow fails, fix forward and cut the next patch. **A published tag is never moved or deleted** — installs
+resolve their download by version, so a moved tag changes what an existing install would fetch.
+
 ## Conventions
 
 - `#![forbid(unsafe_code)]`. Library errors are the `Error` enum in `lib.rs`; `main.rs` uses `anyhow` with context.

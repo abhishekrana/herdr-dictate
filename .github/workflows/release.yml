@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write # sign the provenance attestation
+  attestations: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -50,7 +52,13 @@ jobs:
           git cliff --config cliff.toml --latest --strip header -o NOTES.md
           cat NOTES.md
 
-      - uses: softprops/action-gh-release@v2
+      # Binds the artifact to this workflow, commit and repository, verifiable
+      # with `gh attestation verify`.
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/*.tar.gz
+
+      - uses: softprops/action-gh-release@v3
         with:
           body_path: NOTES.md
           files: |
