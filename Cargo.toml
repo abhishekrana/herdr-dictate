@@ -2,7 +2,7 @@
 name = "herdr-dictate"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT"
 description = "Local speech-to-text dictation into the focused Herdr pane"
 repository = "https://github.com/abhishekrana/herdr-dictate"
@@ -35,18 +35,17 @@ clap = { version = "4", features = ["derive"] }
 cpal = "0.18"
 hound = "3.5"
 rustix = { version = "1", features = ["process"] }
-sha2 = "0.10"
-signal-hook = "0.3"
+sha2 = "0.11"
+signal-hook = "0.4"
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 thiserror = "2"
 whisper-rs = "0.16"
 whisper-rs-sys = { version = "0.15", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.9"
+toml = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-appender = "0.2"
 
 [dev-dependencies]
 tempfile = "3"

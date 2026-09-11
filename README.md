@@ -21,7 +21,7 @@ scripts/install-deps.sh          # Debian and Ubuntu
 
 | dependency                               | needed for                                 |
 | ---------------------------------------- | ------------------------------------------ |
-| Rust 1.85+                               | building                                   |
+| Rust 1.88+                               | building                                   |
 | `build-essential` `cmake` `libclang-dev` | compiling whisper.cpp                      |
 | `libasound2-dev` `pkg-config`            | microphone capture (ALSA)                  |
 | `libvulkan-dev` `glslc`                  | GPU acceleration, `--features vulkan` only |
@@ -146,12 +146,16 @@ as exactly that.
 ## Building
 
 ```sh
-cargo build --release
-cargo test
+scripts/install-deps.sh          # build dependencies
+scripts/install-dev-tools.sh     # cargo-deny, git-cliff, the MSRV toolchain
+scripts/check.sh                 # the gate CI runs; SKIP_DOCKER=1 to skip the container
 ```
 
-MSRV is declared in `Cargo.toml`. There is deliberately no `rust-toolchain.toml`, which would force every user onto one
-toolchain.
+`scripts/check.sh` is what CI runs, so a clean local run means a clean CI run. Tools it cannot find are reported as
+skipped rather than failing. Pinned tool versions live in `scripts/versions.env`.
+
+MSRV is `rust-version` in `Cargo.toml` and is checked by the gate. There is deliberately no `rust-toolchain.toml`, which
+would force every user onto one toolchain.
 
 ## Releasing
 

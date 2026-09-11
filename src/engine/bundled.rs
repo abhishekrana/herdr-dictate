@@ -99,10 +99,10 @@ impl Engine for Bundled {
 
         let mut text = String::new();
         for i in 0..state.full_n_segments() {
-            if let Some(segment) = state.get_segment(i) {
-                if let Ok(chunk) = segment.to_str_lossy() {
-                    text.push_str(&chunk);
-                }
+            if let Some(segment) = state.get_segment(i)
+                && let Ok(chunk) = segment.to_str_lossy()
+            {
+                text.push_str(&chunk);
             }
         }
         Ok(super::strip_non_speech(&text))

@@ -45,7 +45,8 @@ jobs:
 
       - name: Release notes
         run: |
-          cargo install git-cliff --locked --version 2.14.1
+          . scripts/versions.env
+          cargo install git-cliff --locked --version "$GIT_CLIFF_VERSION"
           git cliff --config cliff.toml --latest --strip header -o NOTES.md
           cat NOTES.md
 

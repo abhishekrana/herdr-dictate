@@ -190,10 +190,11 @@ fn toggle(submit: bool) -> Result<ExitCode> {
 
     // Started after delivering, never before: two copies of the model loading
     // at once would slow down the dictation that is paying for it.
-    if settings.server.enabled && !warmed {
-        if let Err(err) = server::spawn() {
-            tracing::debug!(%err, "could not start the model server");
-        }
+    if settings.server.enabled
+        && !warmed
+        && let Err(err) = server::spawn()
+    {
+        tracing::debug!(%err, "could not start the model server");
     }
     Ok(ExitCode::SUCCESS)
 }
