@@ -1,5 +1,8 @@
 # herdr-dictate
 
+[![ci](https://github.com/abhishekrana/herdr-dictate/actions/workflows/ci.yml/badge.svg)](https://github.com/abhishekrana/herdr-dictate/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 Local speech-to-text dictation into the focused [Herdr](https://herdr.dev) pane. Press a key, speak, and the
 transcript is typed into the pane you are looking at. Audio never leaves the machine.
 
