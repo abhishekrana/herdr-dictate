@@ -84,9 +84,17 @@ pub fn stop(session: &Session) -> Result<()> {
 /// an unrelated process is never signalled.
 fn is_running(pid: u32) -> bool {
     match std::fs::read(format!("/proc/{pid}/cmdline")) {
-        Ok(raw) => String::from_utf8_lossy(&raw).contains("herdr-dictate"),
+        Ok(raw) => is_ours(&String::from_utf8_lossy(&raw)),
         Err(_) => false,
     }
+}
+
+fn is_ours(cmdline: &str) -> bool {
+    cmdline.split('\0').next().is_some_and(|argv0| {
+        std::path::Path::new(argv0)
+            .file_name()
+            .is_some_and(|name| name == "herdr-dictate")
+    })
 }
 
 #[cfg(test)]
@@ -94,8 +102,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn our_own_process_is_running() {
-        assert!(is_running(std::process::id()));
+    fn only_this_binary_counts_as_ours() {
+        assert!(is_ours("/usr/local/bin/herdr-dictate\0toggle\0"));
+        assert!(is_ours("herdr-dictate"));
+        // The test binary and anything else sharing the directory name are not.
+        assert!(!is_ours(
+            "/home/u/herdr-dictate/target/debug/deps/herdr_dictate-a1b2"
+        ));
+        assert!(!is_ours("/usr/bin/python3\0script.py\0"));
+        assert!(!is_ours(""));
     }
 
     #[test]
