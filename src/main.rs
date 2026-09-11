@@ -9,7 +9,7 @@ use anyhow::{Context as _, Result};
 use clap::{Parser, Subcommand};
 use herdr_dictate::{
     capture, config, context::Context, doctor, engine, indicator::Indicator, ipc::Client, server,
-    session, session::Session, settings::Settings, setup,
+    session, session::Phase, session::Session, settings::Settings, setup,
 };
 
 #[derive(Parser)]
@@ -59,6 +59,8 @@ enum Command {
     Serve,
     /// Stop a running model server.
     ServeStop,
+    /// Print one chip for the Herdr tab bar.
+    Status,
     /// Report the wiring this plugin depends on.
     Doctor,
 }
@@ -108,8 +110,21 @@ fn run() -> Result<ExitCode> {
             println!("{}", if stopped { "stopped" } else { "not running" });
             Ok(ExitCode::SUCCESS)
         }
+        Command::Status => status().map(|()| ExitCode::SUCCESS),
         Command::Doctor => Ok(run_doctor()),
     }
+}
+
+/// One chip for the tab bar. The glyph carries the state and the label never
+/// changes, so the entry keeps its width and cannot reflow the row beside it.
+fn status() -> Result<()> {
+    let label = match session::peek().context("reading the dictation state")? {
+        Some(session) if session.phase == Phase::Transcribing => "\u{25cc} dictate",
+        Some(_) => "\u{25cf} dictate",
+        None => "\u{25cb} dictate",
+    };
+    println!("{label}");
+    Ok(())
 }
 
 /// A dictation is two invocations: the first records, the second stops it.
@@ -133,18 +148,16 @@ fn toggle(submit: bool) -> Result<ExitCode> {
     signal_hook::flag::register(signal_hook::consts::SIGTERM, std::sync::Arc::clone(&stop))
         .context("registering the stop signal")?;
 
-    session::begin(&Session {
+    // Both cleared on drop, however this function leaves.
+    let mut active = session::Active::begin(Session {
         pid: std::process::id(),
         pane: pane.clone(),
         submit,
+        phase: Phase::Recording,
     })?;
     tracing::info!(%pane, submit, "recording");
-    // Cleared on drop, however this function leaves.
     let indicator = Indicator::show(client.clone(), pane.clone(), "● dictating");
-    let recorded = capture::record(settings.silence.into(), stop);
-    // Cleared whatever happened, so a failure never wedges the next press.
-    let _ = session::end();
-    let recording = recorded.context("recording")?;
+    let recording = capture::record(settings.silence.into(), stop).context("recording")?;
 
     if recording.samples.is_empty() {
         tracing::info!("nothing recorded");
@@ -152,6 +165,7 @@ fn toggle(submit: bool) -> Result<ExitCode> {
     }
 
     indicator.set("◌ transcribing");
+    active.transcribing();
     let served = settings
         .server
         .enabled

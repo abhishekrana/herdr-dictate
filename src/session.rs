@@ -11,11 +11,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Error, PLUGIN_ID, Result};
 
+/// What the recorder is doing now. A dictation outlives the microphone: the
+/// model still has to run, and anything showing state has to say so.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Phase {
+    #[default]
+    Recording,
+    Transcribing,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Session {
     pub pid: u32,
     pub pane: String,
     pub submit: bool,
+    /// Absent in a file written before phases existed, which reads as recording.
+    #[serde(default)]
+    pub phase: Phase,
 }
 
 pub fn state_path() -> Result<PathBuf> {
@@ -37,36 +50,85 @@ pub fn state_path() -> Result<PathBuf> {
 /// recorder that crashed must not wedge every later press.
 pub fn live() -> Result<Option<Session>> {
     let path = state_path()?;
-    let Ok(text) = std::fs::read_to_string(&path) else {
+    let session = peek_at(&path)?;
+    if session.is_none() && path.exists() {
+        // Nothing alive is described here, so the next press starts clean.
+        let _ = std::fs::remove_file(&path);
+    }
+    Ok(session.filter(|session| session.phase == Phase::Recording))
+}
+
+/// Whatever the state file says, if its process is alive. Never writes, so a
+/// reader on a timer cannot destroy a running dictation.
+pub fn peek() -> Result<Option<Session>> {
+    peek_at(&state_path()?)
+}
+
+fn peek_at(path: &std::path::Path) -> Result<Option<Session>> {
+    let Ok(text) = std::fs::read_to_string(path) else {
         return Ok(None);
     };
     let Ok(session) = serde_json::from_str::<Session>(&text) else {
-        let _ = std::fs::remove_file(&path);
         return Ok(None);
     };
-    if is_running(session.pid) {
-        Ok(Some(session))
-    } else {
-        let _ = std::fs::remove_file(&path);
-        Ok(None)
-    }
+    Ok(is_running(session.pid).then_some(session))
 }
 
 pub fn begin(session: &Session) -> Result<()> {
+    write_state(session)
+}
+
+/// Write the state file whole, so a reader never sees half of one.
+fn write_state(session: &Session) -> Result<()> {
     let path = state_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let json = serde_json::to_string(session)?;
-    std::fs::write(&path, json)?;
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, serde_json::to_string(session)?)?;
+    std::fs::rename(&tmp, &path)?;
     Ok(())
 }
 
-pub fn end() -> Result<()> {
+/// Clear the state file, but only while it still names this recorder.
+///
+/// A press during transcription starts a new recording over the same file; the
+/// older process must not then delete the newer one's state.
+pub fn end(session: &Session) -> Result<()> {
     let path = state_path()?;
+    match peek_at(&path)? {
+        Some(current) if current.pid != session.pid => return Ok(()),
+        _ => {}
+    }
     match std::fs::remove_file(&path) {
         Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err.into()),
         _ => Ok(()),
+    }
+}
+
+/// Clears the state file however the press ends.
+pub struct Active {
+    session: Session,
+}
+
+impl Active {
+    pub fn begin(session: Session) -> Result<Self> {
+        write_state(&session)?;
+        Ok(Self { session })
+    }
+
+    /// The microphone is closed; the model is still running.
+    pub fn transcribing(&mut self) {
+        self.session.phase = Phase::Transcribing;
+        if let Err(err) = write_state(&self.session) {
+            tracing::debug!(%err, "could not record the transcribing phase");
+        }
+    }
+}
+
+impl Drop for Active {
+    fn drop(&mut self) {
+        let _ = end(&self.session);
     }
 }
 
@@ -124,8 +186,43 @@ mod tests {
             pid: 42,
             pane: "w1:p2".into(),
             submit: true,
+            phase: Phase::Transcribing,
         };
         let text = serde_json::to_string(&session).unwrap();
         assert_eq!(serde_json::from_str::<Session>(&text).unwrap(), session);
+    }
+
+    #[test]
+    fn a_file_without_a_phase_reads_as_recording() {
+        let text = r#"{"pid":42,"pane":"w1:p2","submit":false}"#;
+        let session = serde_json::from_str::<Session>(text).unwrap();
+        assert_eq!(session.phase, Phase::Recording);
+    }
+
+    #[test]
+    fn a_torn_file_is_reported_as_no_session_and_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("recording.json");
+        // Half a write, which is what a reader racing a non-atomic write saw.
+        std::fs::write(&path, r#"{"pid":42,"pane":"w1"#).unwrap();
+
+        assert!(peek_at(&path).unwrap().is_none());
+        assert!(path.exists(), "a torn read must not delete the session");
+    }
+
+    #[test]
+    fn a_session_whose_process_is_gone_is_cleared() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("recording.json");
+        let session = Session {
+            pid: u32::MAX,
+            pane: "w1:p2".into(),
+            submit: false,
+            phase: Phase::Recording,
+        };
+        std::fs::write(&path, serde_json::to_string(&session).unwrap()).unwrap();
+
+        assert!(peek_at(&path).unwrap().is_none());
+        assert!(path.exists(), "peek never writes; live() is what heals");
     }
 }

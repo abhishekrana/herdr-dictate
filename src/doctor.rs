@@ -11,6 +11,17 @@ use crate::context::Context;
 use crate::ipc::Client;
 use crate::{PLUGIN_ID, capture, config, server};
 
+/// The entry to add to Herdr's own config, naming this binary by its real path:
+/// the plugin is not on PATH.
+fn chip_remedy() -> String {
+    let exe = std::env::current_exe()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|_| "herdr-dictate".into());
+    format!(
+        r#"add under [ui] in ~/.config/herdr/config.toml: tab_bar_right = [{{ type = "command", command = "{exe} status", interval_seconds = 1 }}]"#
+    )
+}
+
 /// How long the level check listens for.
 const LEVEL_SAMPLE: Duration = Duration::from_millis(700);
 
@@ -68,8 +79,29 @@ pub fn run() -> Vec<Check> {
         model_server(),
         config_file(),
         bindings(),
+        status_chip(),
         plugin_dirs(),
     ]
+}
+
+/// The tab-bar chip, which the user adds to Herdr's own config.
+fn status_chip() -> Check {
+    let name = "status.chip";
+    let Ok(path) = config::config_path() else {
+        return warn(name, "no Herdr config path", "set HOME");
+    };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return warn(
+            name,
+            format!("{} is unreadable", path.display()),
+            chip_remedy(),
+        );
+    };
+    if text.contains("herdr-dictate status") {
+        ok(name, "configured in tab_bar_right")
+    } else {
+        warn(name, "not in tab_bar_right", chip_remedy())
+    }
 }
 
 /// The most severe status present.

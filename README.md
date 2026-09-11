@@ -61,6 +61,46 @@ noticeably longer than the rest.
 | `transcribe FILE`          | transcribe a 16 kHz mono WAV                           |
 | `record --out FILE`        | record a WAV, to check the microphone                  |
 | `deliver [--submit]`       | type a transcript read from stdin into the target pane |
+| `status`                   | print one chip for the Herdr tab bar                   |
+
+### Global hotkey
+
+Dictation starts from anything that can run a command, whether or not Herdr has
+focus:
+
+```sh
+herdr plugin action invoke abhishekrana.dictate.toggle-send
+```
+
+Binding it is the desktop's job, so the plugin writes nothing outside Herdr.
+
+| desktop        | where to put that command                              |
+| -------------- | ------------------------------------------------------ |
+| GNOME          | Settings → Keyboard → Custom Shortcuts                  |
+| KDE            | System Settings → Shortcuts → Custom Shortcuts          |
+| sway, Hyprland | `bindsym $mod+d exec …` in the config                   |
+| macOS          | skhd, Karabiner-Elements or a Shortcuts service        |
+
+### Status chip
+
+`status` prints one chip for Herdr's tab bar, so the state is visible in every
+workspace:
+
+```toml
+# ~/.config/herdr/config.toml, under the existing [ui] section
+tab_bar_right = [
+  { type = "command", command = "/path/to/herdr-dictate status", interval_seconds = 1 },
+]
+```
+
+The plugin is not on `PATH`, so the entry names the binary by its full path.
+`doctor` prints the line to paste, with the path filled in.
+
+`○ dictate` idle, `● dictate` recording, `◌ dictate` transcribing. The label never
+changes, so the entry keeps its width and cannot reflow the row beside it.
+
+Herdr has no clickable surface a plugin can add to, so the chip reports state
+and the key does the work.
 
 `toggle`, `toggle-send` and `doctor` are Herdr actions once installed:
 
@@ -79,7 +119,7 @@ Optional, at `config.toml` in `herdr plugin config-dir abhishekrana.dictate`:
 [engine]
 language = "en"
 threads = 0                  # 0 = one per core
-prompt = "Terms: worktree, dotfiles, herdr."   # biases the vocabulary
+prompt = "Terms: worktree, kubectl, herdr."   # biases the vocabulary
 
 [engine.model]
 name = "small.en-q8_0"       # tiny.en, base.en, base.en-q8_0, small.en-q8_0, small.en

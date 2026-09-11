@@ -75,6 +75,10 @@ Flow through the modules:
   rebound key is not offered twice. `config::BINDINGS` is the single source of truth for suggested keys.
 - `settings` — the plugin's own `config.toml` from `HERDR_PLUGIN_CONFIG_DIR`. Every section is `#[serde(default,
   deny_unknown_fields)]`, so a missing file is all defaults and a misspelt key is an error rather than silence.
+- `session` — the state file behind the two-invocation toggle. Written whole via a temp file and a rename, and `peek`
+  never writes, so `status` polling it cannot destroy a running dictation. `live` is `peek` filtered to
+  `Phase::Recording`, which keeps a press during transcription from signalling the model. `end` only clears a file
+  that still names its own pid, so a later press's state is never the one removed.
 - `doctor` — one named `Check` per thing that can break, each with a remedy; exits non-zero on any `Fail`.
 
 ### Environment contract
