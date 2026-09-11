@@ -8,6 +8,7 @@
 use std::path::PathBuf;
 
 pub mod audio;
+pub mod capture;
 pub mod config;
 pub mod context;
 pub mod ipc;
@@ -23,6 +24,12 @@ pub enum Error {
 
     #[error("Herdr reports no focused pane")]
     NoFocusedPane,
+
+    #[error("no default input device")]
+    NoInputDevice,
+
+    #[error("audio: {0}")]
+    Audio(String),
 
     #[error("{0} is not valid TOML")]
     ConfigUnparseable(PathBuf),

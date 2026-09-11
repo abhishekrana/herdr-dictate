@@ -7,7 +7,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context as _, Result};
 use clap::{Parser, Subcommand};
-use herdr_dictate::{config, context::Context, ipc::Client, setup};
+use herdr_dictate::{capture, config, context::Context, ipc::Client, setup};
 
 /// Distinguishes "declared but not built yet" from an unknown command.
 const EXIT_NOT_IMPLEMENTED: u8 = 3;
@@ -44,6 +44,14 @@ enum Command {
         /// Show the bindings and write nothing.
         #[arg(long)]
         print: bool,
+    },
+    /// Record to a WAV file, to check the microphone path.
+    Record {
+        #[arg(long, value_name = "FILE")]
+        out: std::path::PathBuf,
+        /// Stop after this many seconds regardless of silence.
+        #[arg(long, default_value_t = 10)]
+        seconds: u64,
     },
     /// Report the wiring this plugin depends on.
     Doctor,
@@ -87,6 +95,7 @@ fn run() -> Result<ExitCode> {
             setup::run(mode, &path, &mut std::io::stdout()).context("writing the keybindings")?;
             Ok(ExitCode::SUCCESS)
         }
+        Command::Record { out, seconds } => record(&out, seconds).map(|()| ExitCode::SUCCESS),
         Command::Doctor => doctor().map(|()| ExitCode::SUCCESS),
     }
 }
@@ -123,6 +132,24 @@ fn deliver(submit: bool) -> Result<()> {
     Ok(())
 }
 
+fn record(out: &std::path::Path, seconds: u64) -> Result<()> {
+    let silence = herdr_dictate::audio::SilenceConfig {
+        max_duration: std::time::Duration::from_secs(seconds),
+        ..Default::default()
+    };
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let recording = capture::record(silence, stop).context("recording")?;
+    capture::write_wav(out, &recording.samples).context("writing the wav")?;
+    println!(
+        "{:.1}s, {} samples, stopped by {:?} -> {}",
+        recording.duration().as_secs_f64(),
+        recording.samples.len(),
+        recording.stopped_by,
+        out.display()
+    );
+    Ok(())
+}
+
 fn doctor() -> Result<()> {
     println!("herdr-dictate {}", env!("CARGO_PKG_VERSION"));
     match Client::from_env() {
@@ -139,6 +166,11 @@ fn doctor() -> Result<()> {
         "context     {:?}",
         Context::from_env().unwrap_or_default().target_pane()
     );
+
+    match capture::describe_input() {
+        Ok(input) => println!("input       {input}"),
+        Err(err) => println!("input       unavailable - {err}"),
+    }
 
     let path = config::config_path()?;
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
