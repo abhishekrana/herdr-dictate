@@ -8,8 +8,8 @@ use std::process::ExitCode;
 use anyhow::{Context as _, Result};
 use clap::{Parser, Subcommand};
 use herdr_dictate::{
-    capture, config, context::Context, doctor, engine, ipc::Client, session, session::Session,
-    settings::Settings, setup,
+    capture, config, context::Context, doctor, engine, indicator::Indicator, ipc::Client, session,
+    session::Session, settings::Settings, setup,
 };
 
 #[derive(Parser)]
@@ -125,6 +125,8 @@ fn toggle(submit: bool) -> Result<ExitCode> {
         submit,
     })?;
     tracing::info!(%pane, submit, "recording");
+    // Cleared on drop, however this function leaves.
+    let indicator = Indicator::show(client.clone(), pane.clone(), "● dictating");
     let recorded = capture::record(settings.silence.into(), stop);
     // Cleared whatever happened, so a failure never wedges the next press.
     let _ = session::end();
@@ -135,6 +137,7 @@ fn toggle(submit: bool) -> Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
 
+    indicator.set("◌ transcribing");
     let mut engine =
         engine::build(&settings.engine, &mut std::io::stderr()).context("loading the engine")?;
     let text = engine
@@ -144,6 +147,9 @@ fn toggle(submit: bool) -> Result<ExitCode> {
         tracing::info!(secs = recording.duration().as_secs_f64(), "no speech");
         return Ok(ExitCode::SUCCESS);
     }
+
+    // Cleared before the words arrive, not after.
+    drop(indicator);
 
     // strip_non_speech collapses whitespace, so a dictated newline cannot
     // submit the prompt; only --submit presses Enter.

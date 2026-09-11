@@ -13,6 +13,7 @@ pub mod config;
 pub mod context;
 pub mod doctor;
 pub mod engine;
+pub mod indicator;
 pub mod ipc;
 pub mod model;
 pub mod session;

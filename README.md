@@ -21,6 +21,10 @@ first then transcribes and delivers. The target pane is latched by the first pre
 were looking when you spoke. A state file whose process is gone is cleared rather than believed, so a recorder that
 crashed cannot wedge every later press.
 
+**The pane says what is happening.** `● dictating` while recording, `◌ transcribing` while the model runs, cleared
+before the words arrive. The label carries a TTL and is refreshed while the process lives, so a recorder that is killed
+leaves nothing stale behind.
+
 **Delivery inserts, it does not submit.** The transcript lands in the pane's input so you can stack takes, edit them and
 send when you mean to. Submitting is a separate, explicit `--submit`.
 

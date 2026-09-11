@@ -127,6 +127,29 @@ impl Client {
             .ok_or(Error::NoFocusedPane)
     }
 
+    /// Show a label on a pane. It expires after `ttl` unless refreshed, so a
+    /// process that dies mid-dictation leaves nothing stale behind.
+    pub fn set_pane_label(&self, pane: &str, label: &str, ttl: std::time::Duration) -> Result<()> {
+        self.call(
+            "pane.report_metadata",
+            json!({
+                "pane_id": pane,
+                "source": crate::PLUGIN_ID,
+                "display_agent": label,
+                "ttl_ms": ttl.as_millis() as u64,
+            }),
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_pane_label(&self, pane: &str) -> Result<()> {
+        self.call(
+            "pane.report_metadata",
+            json!({ "pane_id": pane, "source": crate::PLUGIN_ID, "clear_display_agent": true }),
+        )?;
+        Ok(())
+    }
+
     /// Re-read config.toml in the running server. Returns its diagnostics.
     pub fn reload_config(&self) -> Result<Vec<String>> {
         let result = self.call("server.reload_config", json!({}))?;
