@@ -13,18 +13,22 @@ server is this binary. There is no sidecar to install and nothing to run yoursel
 
 ## Requirements
 
-Installing fetches the release binary when one matches your machine - x86_64 Linux with `libvulkan1` - and builds from
-source otherwise, with GPU support when the toolchain for it is present. A source build needs:
-
 ```sh
 scripts/install-deps.sh          # Debian and Ubuntu
 ```
 
-| dependency                               | needed for                                 |
-| ---------------------------------------- | ------------------------------------------ |
-| Rust 1.88+                               | building                                   |
-| `build-essential` `cmake` `libclang-dev` | compiling whisper.cpp                      |
-| `libasound2-dev` `pkg-config`            | microphone capture (ALSA)                  |
+**Install `libvulkan-dev` and `glslc` if the machine has a GPU** - the script does. The plugin then uses the GPU
+automatically, which is several times faster. Without them you get a CPU-only build, which works everywhere and is
+the fallback rather than the default.
+
+Installing the plugin fetches the released GPU binary when it fits this machine, and builds from source otherwise -
+with GPU support when the toolchain above is present. A source build needs:
+
+| dependency                               | needed for                                        |
+| ---------------------------------------- | ------------------------------------------------- |
+| Rust 1.88+                               | building                                          |
+| `build-essential` `cmake` `libclang-dev` | compiling whisper.cpp                             |
+| `libasound2-dev` `pkg-config`            | microphone capture (ALSA)                         |
 | `libvulkan-dev` `glslc`                  | GPU acceleration; used automatically when present |
 
 At runtime only `libasound2`, `libvulkan1` and a GPU driver are needed; a desktop system normally has them. TLS roots
@@ -39,7 +43,7 @@ herdr plugin pane open --plugin abhishekrana.dictate --entrypoint setup
 
 `herdr plugin install` puts the plugin in its own managed checkout and the binary is not placed on `PATH`, so `setup`
 is opened as a plugin pane rather than run as a command. It fetches the release binary when it can, and compiles
-whisper.cpp when it cannot, which takes about a minute.
+whisper.cpp when it cannot, which takes a while.
 
 Herdr plugins cannot register their own keys, so `setup` adds them. It backs up `config.toml`, appends rather than
 rewriting so comments survive, refuses a file that is not valid TOML, and matches by action so a key you moved is not
@@ -106,17 +110,16 @@ pinned SHA-256.
 
 ## Models
 
-Measured on 4.0 s of speech:
+| model         | download | accuracy    |
+| ------------- | -------- | ----------- |
+| tiny.en       | 74 MB    | poor        |
+| base.en-q8_0  | 77 MB    | fair        |
+| base.en       | 141 MB   | fair        |
+| small.en-q8_0 | 252 MB   | good (default) |
+| small.en      | 465 MB   | good        |
 
-| model         | download | transcript      |
-| ------------- | -------- | --------------- |
-| tiny.en       | 74 MB    | mostly wrong    |
-| base.en-q8_0  | 77 MB    | two words wrong |
-| base.en       | 141 MB   | two words wrong |
-| small.en-q8_0 | 252 MB   | exact (default) |
-| small.en      | 465 MB   | exact           |
-
-Within a size class the quantised `q8_0` build was faster for half the download and gave the same transcript.
+Within a size class the quantised `q8_0` build is faster for half the download, with no accuracy difference
+observed. Larger models are slower.
 
 ## Acceleration
 
@@ -130,13 +133,6 @@ this machine can run, in this order:
 One Vulkan build drives AMD, Intel and NVIDIA, because every vendor's driver ships a Vulkan ICD. With no GPU present
 the same binary still runs on the CPU, without configuration - so step 3 is only reached when the build toolchain for
 Vulkan is missing.
-
-It is worth roughly eight times, measured with `small.en-q8_0` on a warm server:
-
-| machine                             | GPU   | CPU only |
-| ----------------------------------- | ----- | -------- |
-| discrete NVIDIA GPU, 24 CPU threads | 0.2 s | 2.0 s    |
-| integrated AMD GPU, 16 CPU threads  | 0.6 s | 5.1 s    |
 
 To build by hand:
 
