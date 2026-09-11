@@ -1,0 +1,43 @@
+[package]
+name = "herdr-dictate"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "Local speech-to-text dictation into the focused Herdr pane"
+repository = "https://github.com/OWNER/herdr-dictate"
+keywords = ["herdr", "dictation", "speech-to-text", "whisper"]
+categories = ["command-line-utilities"]
+
+[lib]
+name = "herdr_dictate"
+path = "src/lib.rs"
+
+[[bin]]
+name = "herdr-dictate"
+path = "src/main.rs"
+
+[features]
+default = []
+# Acceleration for the bundled engine. CPU works everywhere; these need the
+# matching SDK at build time, so release binaries ship one variant per backend.
+vulkan = []
+cuda = []
+metal = []
+
+[dependencies]
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+strip = true
+lto = "thin"
