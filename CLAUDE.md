@@ -117,22 +117,27 @@ socket lives under `XDG_RUNTIME_DIR`.
 
 ## Deploy
 
-Gate, push, then make it live on the running Herdr.
+Commit and push first, then make it live:
 
 ```sh
-scripts/check.sh && git push
-cargo build --release --features vulkan   # what Herdr runs
+scripts/check.sh
+git commit && git push
+scripts/deploy.sh
 ```
 
-An action spawns the binary per invocation, so a rebuild is live with no reload. The rest only when it applies:
+`deploy.sh` refuses a dirty tree and refuses unpushed commits, so what runs is what is on the branch. It builds with
+the GPU backend when the toolchain allows, re-registers the plugin, stops the resident server so it reloads, and ends
+with `doctor`.
 
-- **The manifest changed** (a new action, pane, hook): Herdr reads `herdr-plugin.toml` when it registers a plugin, so
-  re-register - `herdr plugin unlink abhishekrana.dictate && herdr plugin link .`
-- **The suggested keybindings changed**: `herdr server reload-config` after `setup` writes them.
-- **The resident model server is running**: `herdr-dictate serve-stop`, or it keeps serving from the old binary until
-  it idles out.
+Verifying a deploy without a microphone:
 
-Development registers the working tree with `herdr plugin link .`; a published release is consumed with
+- `doctor` names every dependency and fails on any it cannot satisfy. `plugin.registration` is the one that catches a
+  Herdr running a different build from the tree being edited.
+- `herdr plugin log list --plugin abhishekrana.dictate` is every invocation Herdr made, with exit status.
+- `herdr plugin action invoke abhishekrana.dictate.doctor` exercises the path an action really takes.
+- `HERDR_DICTATE_LOG=debug` raises the level; logging goes to stderr, which Herdr captures into the plugin log.
+
+Development registers the working tree; a published release is consumed with
 `herdr plugin install abhishekrana/herdr-dictate`. The two are mutually exclusive - unlink before installing.
 
 ## Cutting a release

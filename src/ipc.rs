@@ -150,6 +150,22 @@ impl Client {
         Ok(())
     }
 
+    /// The directory Herdr registered this plugin from, if it is registered.
+    pub fn plugin_root(&self) -> Result<Option<String>> {
+        let result = self.call("plugin.list", json!({}))?;
+        Ok(result
+            .get("plugins")
+            .and_then(Value::as_array)
+            .and_then(|plugins| {
+                plugins.iter().find(|plugin| {
+                    plugin.get("plugin_id").and_then(Value::as_str) == Some(crate::PLUGIN_ID)
+                })
+            })
+            .and_then(|plugin| plugin.get("plugin_root"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned))
+    }
+
     /// Re-read config.toml in the running server. Returns its diagnostics.
     pub fn reload_config(&self) -> Result<Vec<String>> {
         let result = self.call("server.reload_config", json!({}))?;

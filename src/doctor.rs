@@ -79,9 +79,42 @@ pub fn run() -> Vec<Check> {
         model_server(),
         config_file(),
         bindings(),
+        registration(),
         status_chip(),
         plugin_dirs(),
     ]
+}
+
+/// Whether Herdr runs this binary, or another build of the plugin.
+fn registration() -> Check {
+    let name = "plugin.registration";
+    let Ok(client) = Client::from_env() else {
+        return warn(name, "not running inside Herdr", "expected outside Herdr");
+    };
+    let root = match client.plugin_root() {
+        Ok(Some(root)) => root,
+        Ok(None) => {
+            return fail(
+                name,
+                "not registered",
+                "herdr plugin link <dir>, or herdr plugin install abhishekrana/herdr-dictate",
+            );
+        }
+        Err(err) => return warn(name, err.to_string(), "check the Herdr socket"),
+    };
+    // The binary sits at <root>/target/release/, so its root is three up.
+    let mine = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.ancestors().nth(3).map(Path::to_path_buf));
+    match mine {
+        Some(mine) if mine == Path::new(&root) => ok(name, root),
+        Some(mine) => fail(
+            name,
+            format!("Herdr runs {root}, this binary is from {}", mine.display()),
+            "scripts/deploy.sh, or herdr plugin link the directory you build in",
+        ),
+        None => warn(name, format!("registered at {root}"), ""),
+    }
 }
 
 /// The tab-bar chip, which the user adds to Herdr's own config.
