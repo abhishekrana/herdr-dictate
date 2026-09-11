@@ -12,7 +12,9 @@ pub mod capture;
 pub mod config;
 pub mod context;
 pub mod doctor;
+pub mod engine;
 pub mod ipc;
+pub mod model;
 pub mod setup;
 
 /// Namespace Herdr qualifies this plugin's actions and state directories with.
@@ -31,6 +33,9 @@ pub enum Error {
 
     #[error("audio: {0}")]
     Audio(String),
+
+    #[error("model: {0}")]
+    Model(String),
 
     #[error("{0} is not valid TOML")]
     ConfigUnparseable(PathBuf),

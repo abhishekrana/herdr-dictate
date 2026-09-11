@@ -53,6 +53,8 @@ enum Command {
         #[arg(long, default_value_t = 10)]
         seconds: u64,
     },
+    /// Transcribe a 16 kHz mono WAV file.
+    Transcribe { file: std::path::PathBuf },
     /// Report the wiring this plugin depends on.
     Doctor,
 }
@@ -96,6 +98,7 @@ fn run() -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Command::Record { out, seconds } => record(&out, seconds).map(|()| ExitCode::SUCCESS),
+        Command::Transcribe { file } => transcribe(&file).map(|()| ExitCode::SUCCESS),
         Command::Doctor => Ok(run_doctor()),
     }
 }
@@ -147,6 +150,28 @@ fn record(out: &std::path::Path, seconds: u64) -> Result<()> {
         recording.stopped_by,
         out.display()
     );
+    Ok(())
+}
+
+fn transcribe(file: &std::path::Path) -> Result<()> {
+    let mut reader =
+        hound::WavReader::open(file).with_context(|| format!("opening {}", file.display()))?;
+    let samples: std::result::Result<Vec<i16>, _> = reader.samples::<i16>().collect();
+    let samples = samples.context("reading samples")?;
+
+    let config = herdr_dictate::engine::Config::default();
+    let mut engine = herdr_dictate::engine::build(&config, &mut std::io::stderr())
+        .context("loading the engine")?;
+    eprintln!("{}", engine.describe());
+
+    let started = std::time::Instant::now();
+    let text = engine.transcribe(&samples).context("transcribing")?;
+    eprintln!(
+        "{:.1}s of audio in {:.1}s",
+        samples.len() as f64 / 16000.0,
+        started.elapsed().as_secs_f64()
+    );
+    println!("{text}");
     Ok(())
 }
 
