@@ -9,6 +9,29 @@ is typed into the pane you are looking at. Audio never leaves the machine.
 > **Status: working, unreleased.** Dictation runs end to end on Linux. There is no recording indicator yet, and macOS
 > needs a resampler before it can be enabled.
 
+## Requirements
+
+**These are needed to use the plugin, not only to develop it.** `herdr plugin install` builds from source on your
+machine, so its build dependencies are yours too:
+
+| need                               | Debian / Ubuntu             | why                                            |
+| ---------------------------------- | --------------------------- | ---------------------------------------------- |
+| Rust 1.85 or newer                 | [rustup](https://rustup.rs) |                                                |
+| C++ toolchain and cmake            | `build-essential cmake`     | whisper.cpp is compiled here                   |
+| ALSA headers                       | `libasound2-dev`            | the microphone; Linux has no pure-Rust mic API |
+| Vulkan headers and shader compiler | `libvulkan-dev glslc`       | only for `--features vulkan`                   |
+
+```sh
+sudo apt-get install -y build-essential cmake glslc libasound2-dev libvulkan-dev
+```
+
+At **runtime** the binary needs only the shared libraries those packages provide (`libasound2`, `libvulkan1`) plus your
+GPU driver - all of which a desktop system normally already has. A `vulkaninfo` from `vulkan-tools` is useful for
+checking the GPU is visible, but nothing requires it.
+
+Verified from a stock Ubuntu 24.04 install: `cc`, `g++` and `git` were already present, and the GPU vendor driver
+already supplied the Vulkan ICD and runtime, so only the four packages above had to be added.
+
 ## Design
 
 **The target pane is the one Herdr names, and is never recomputed.** Herdr hands every plugin command a
@@ -109,20 +132,25 @@ cargo build --release --features hipblas   # AMD ROCm
 
 `vulkan` enables the feature on `whisper-rs-sys` directly, because `whisper-rs` does not forward it.
 
-**Build with `vulkan` if you can.** Measured on an AMD Radeon 860M with `small.en-q8_0`, 4.0 s of speech, warm server:
+**Build with `vulkan` if you can.** One `--features vulkan` build drives AMD, Intel and NVIDIA alike, because every
+vendor's driver ships a Vulkan ICD - no CUDA toolkit, and one binary rather than one per vendor. If no GPU is found the
+same binary runs on the CPU with no configuration and no error.
 
-| build                     | time  | transcript |
-| ------------------------- | ----- | ---------- |
-| `--features vulkan`       | 0.6 s | exact      |
-| default (CPU, 16 threads) | 5.1 s | exact      |
+Measured with `small.en-q8_0` on a warm server, 4.0 s of speech:
 
-The GPU is worth about 8.5x here. Note that whisper-rs derives `use_gpu` from its own `_gpu` feature, which the vulkan
-backend does not set, so this crate asks for the GPU explicitly - without that, whisper.cpp compiles the Vulkan backend
-in and then never uses it.
+| machine                             | GPU   | CPU only |
+| ----------------------------------- | ----- | -------- |
+| discrete NVIDIA GPU, 24 CPU threads | 0.2 s | 2.0 s    |
+| integrated AMD GPU, 16 CPU threads  | 0.6 s | 5.1 s    |
 
-For reference, the same clip through other stacks: whisper.cpp Vulkan behind `whisper-server` takes 0.47 s, and
-faster-whisper `small.en` int8 on CPU takes 1.4 s - the latter beats whisper.cpp on CPU by roughly 3.6x, which is why a
-CPU-only build is the slow path here.
+The fallback was verified by hiding the driver (`VK_DRIVER_FILES=/dev/null`) from the same GPU build: it transcribed
+correctly on the CPU.
+
+`cuda`, `metal` and `hipblas` features also exist, and may beat Vulkan on their own hardware, but each needs its own SDK
+at build time. They are mutually exclusive - never build with `--all-features`.
+
+Note that whisper-rs derives `use_gpu` from its own `_gpu` feature, which the Vulkan backend does not set, so this crate
+asks for the GPU explicitly. Without that, whisper.cpp compiles the Vulkan backend in and then never uses it.
 
 ## Models
 
