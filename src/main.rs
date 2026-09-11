@@ -8,8 +8,8 @@ use std::process::ExitCode;
 use anyhow::{Context as _, Result};
 use clap::{Parser, Subcommand};
 use herdr_dictate::{
-    capture, config, context::Context, doctor, engine, indicator::Indicator, ipc::Client, session,
-    session::Session, settings::Settings, setup,
+    capture, config, context::Context, doctor, engine, indicator::Indicator, ipc::Client, server,
+    session, session::Session, settings::Settings, setup,
 };
 
 #[derive(Parser)]
@@ -55,6 +55,10 @@ enum Command {
     },
     /// Transcribe a 16 kHz mono WAV file.
     Transcribe { file: std::path::PathBuf },
+    /// Hold the model resident, serving transcriptions until idle.
+    Serve,
+    /// Stop a running model server.
+    ServeStop,
     /// Report the wiring this plugin depends on.
     Doctor,
 }
@@ -94,6 +98,16 @@ fn run() -> Result<ExitCode> {
         }
         Command::Record { out, seconds } => record(&out, seconds).map(|()| ExitCode::SUCCESS),
         Command::Transcribe { file } => transcribe(&file).map(|()| ExitCode::SUCCESS),
+        Command::Serve => {
+            let settings = Settings::load().context("reading the plugin config")?;
+            server::serve(&settings, settings.server.idle()).context("serving")?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::ServeStop => {
+            let stopped = server::stop().context("stopping the server")?;
+            println!("{}", if stopped { "stopped" } else { "not running" });
+            Ok(ExitCode::SUCCESS)
+        }
         Command::Doctor => Ok(run_doctor()),
     }
 }
@@ -138,11 +152,22 @@ fn toggle(submit: bool) -> Result<ExitCode> {
     }
 
     indicator.set("◌ transcribing");
-    let mut engine =
-        engine::build(&settings.engine, &mut std::io::stderr()).context("loading the engine")?;
-    let text = engine
-        .transcribe(&recording.samples)
-        .context("transcribing")?;
+    let served = settings
+        .server
+        .enabled
+        .then(|| server::try_transcribe(&recording.samples))
+        .flatten();
+    let warmed = served.is_some();
+    let text = match served {
+        Some(text) => text,
+        None => {
+            let mut engine = engine::build(&settings.engine, &mut std::io::stderr())
+                .context("loading the engine")?;
+            engine
+                .transcribe(&recording.samples)
+                .context("transcribing")?
+        }
+    };
     if text.is_empty() {
         tracing::info!(secs = recording.duration().as_secs_f64(), "no speech");
         return Ok(ExitCode::SUCCESS);
@@ -162,6 +187,14 @@ fn toggle(submit: bool) -> Result<ExitCode> {
             .with_context(|| format!("submitting in {pane}"))?;
     }
     tracing::info!(%pane, chars = text.len(), stopped_by = ?recording.stopped_by, "delivered");
+
+    // Started after delivering, never before: two copies of the model loading
+    // at once would slow down the dictation that is paying for it.
+    if settings.server.enabled && !warmed {
+        if let Err(err) = server::spawn() {
+            tracing::debug!(%err, "could not start the model server");
+        }
+    }
     Ok(ExitCode::SUCCESS)
 }
 
@@ -222,12 +255,25 @@ fn transcribe(file: &std::path::Path) -> Result<()> {
     let samples = samples.context("reading samples")?;
 
     let settings = Settings::load().context("reading the plugin config")?;
-    let mut engine =
-        engine::build(&settings.engine, &mut std::io::stderr()).context("loading the engine")?;
-    eprintln!("{}", engine.describe());
 
     let started = std::time::Instant::now();
-    let text = engine.transcribe(&samples).context("transcribing")?;
+    let served = settings
+        .server
+        .enabled
+        .then(|| server::try_transcribe(&samples))
+        .flatten();
+    let text = match served {
+        Some(text) => {
+            eprintln!("via the model server");
+            text
+        }
+        None => {
+            let mut engine = engine::build(&settings.engine, &mut std::io::stderr())
+                .context("loading the engine")?;
+            eprintln!("{}", engine.describe());
+            engine.transcribe(&samples).context("transcribing")?
+        }
+    };
     eprintln!(
         "{:.1}s of audio in {:.1}s",
         samples.len() as f64 / 16000.0,

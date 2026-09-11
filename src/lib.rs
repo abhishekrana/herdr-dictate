@@ -16,6 +16,7 @@ pub mod engine;
 pub mod indicator;
 pub mod ipc;
 pub mod model;
+pub mod server;
 pub mod session;
 pub mod settings;
 pub mod setup;

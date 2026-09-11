@@ -9,7 +9,7 @@ use std::time::Duration;
 use crate::audio::{SilenceConfig, rms};
 use crate::context::Context;
 use crate::ipc::Client;
-use crate::{PLUGIN_ID, capture, config};
+use crate::{PLUGIN_ID, capture, config, server};
 
 /// How long the level check listens for.
 const LEVEL_SAMPLE: Duration = Duration::from_millis(700);
@@ -65,6 +65,7 @@ pub fn run() -> Vec<Check> {
         focused_pane(),
         input_device(),
         input_level(),
+        model_server(),
         config_file(),
         bindings(),
         plugin_dirs(),
@@ -186,6 +187,21 @@ fn input_level() -> Check {
                 ok("audio.level", detail)
             }
         }
+    }
+}
+
+/// Whether the model is resident. Absent only means the next dictation pays
+/// the load itself.
+fn model_server() -> Check {
+    let path = server::socket_path();
+    if std::os::unix::net::UnixStream::connect(&path).is_ok() {
+        ok("model.server", format!("resident at {}", path.display()))
+    } else {
+        warn(
+            "model.server",
+            "not running",
+            "Started after the next dictation; the one before it loads the model itself.",
+        )
     }
 }
 

@@ -21,6 +21,11 @@ first then transcribes and delivers. The target pane is latched by the first pre
 were looking when you spoke. A state file whose process is gone is cleared rather than believed, so a recorder that
 crashed cannot wedge every later press.
 
+**The model stays resident.** A plugin action is a fresh process every press, so the first dictation starts a background
+server that holds the engine and serves transcriptions over a socket until idle. It is spawned after that dictation is
+delivered, never before, so two copies of the model never load at once. An unreachable server is not an error - the
+press transcribes in process instead, so dictation always works.
+
 **The pane says what is happening.** `● dictating` while recording, `◌ transcribing` while the model runs, cleared
 before the words arrive. The label carries a TTL and is refreshed while the process lives, so a recorder that is killed
 leaves nothing stale behind.

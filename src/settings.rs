@@ -14,6 +14,32 @@ use crate::{Error, Result};
 pub struct Settings {
     pub engine: engine::Config,
     pub silence: Silence,
+    pub server: Server,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Server {
+    /// Keep the model resident between dictations.
+    pub enabled: bool,
+    /// Seconds of disuse before the server exits and frees the model. Zero
+    /// keeps it forever.
+    pub idle_secs: u64,
+}
+
+impl Default for Server {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            idle_secs: 300,
+        }
+    }
+}
+
+impl Server {
+    pub fn idle(&self) -> Duration {
+        Duration::from_secs(self.idle_secs)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -113,6 +139,20 @@ mod tests {
             config.max_duration >= Duration::from_secs(1),
             "a zero cap would end every recording at once"
         );
+    }
+
+    #[test]
+    fn the_server_defaults_to_on_with_an_idle_timeout() {
+        let settings = Settings::default();
+        assert!(settings.server.enabled);
+        assert_eq!(settings.server.idle(), Duration::from_secs(300));
+    }
+
+    #[test]
+    fn the_server_can_be_turned_off() {
+        let settings: Settings = toml::from_str("[server]\nenabled = false\n").unwrap();
+        assert!(!settings.server.enabled);
+        assert_eq!(settings.server.idle_secs, 300, "other defaults survive");
     }
 
     #[test]
