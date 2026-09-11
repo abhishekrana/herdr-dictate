@@ -25,11 +25,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
+      - run: scripts/install-dev-tools.sh
+
       - name: Gate
-        run: |
-          cargo fmt --all --check
-          cargo clippy --all-targets -- -D warnings
-          cargo test --locked
+        run: scripts/check.sh
+        env:
+          SKIP_DOCKER: "1"
 
       # The GPU build runs on the CPU when no GPU is present, so one artifact
       # serves both. It needs libvulkan1 at runtime.

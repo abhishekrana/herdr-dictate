@@ -12,6 +12,9 @@ command -v rustup >/dev/null 2>&1 || {
     exit 1
 }
 
+# The toolchain lints run under, pinned so its clippy matches CI's.
+rustup toolchain install "$RUST_VERSION" --profile minimal --no-self-update
+rustup component add --toolchain "$RUST_VERSION" rustfmt clippy
 rustup component add rustfmt clippy
 
 # The MSRV toolchain, so the minimum this crate claims can be checked locally.

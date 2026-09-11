@@ -135,7 +135,8 @@ scripts/install-dev-tools.sh     # cargo-deny, git-cliff, the MSRV toolchain
 scripts/check.sh                 # the gate CI runs; SKIP_DOCKER=1 skips the container
 ```
 
-A clean local run means a clean CI run; tools it cannot find are reported as skipped. Release steps are in
+A clean local run means a clean CI run: lints use the toolchain pinned in `scripts/versions.env`, the same one CI
+installs. Tools the gate cannot find are reported as skipped. Release steps are in
 `CLAUDE.md`. Release binaries are built by CI and carry a provenance attestation, verifiable with
 `gh attestation verify <archive> --repo abhishekrana/herdr-dictate`.
 

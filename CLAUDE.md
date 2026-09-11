@@ -105,22 +105,30 @@ Run these in order and stop at the first failure.
 1. **Preconditions.** `git status --porcelain` is empty and `git fetch && git rev-list --count origin/main..main` is
    `0`. A release is cut from what is pushed.
 2. **Gate.** `scripts/check.sh` passes with **nothing skipped**. A skip means a tool is missing; install it with
-   `scripts/install-dev-tools.sh` rather than releasing unverified.
-3. **Version.** `git tag --list 'v*' --sort=-v:refname | head -1` is the previous one. SemVer against it; while on
+   `scripts/install-dev-tools.sh` rather than releasing unverified. Lints run under the toolchain pinned in
+   `scripts/versions.env`, so local and CI judge the same code the same way.
+3. **CI is green on the commit being tagged.** Local success is not evidence: the runner has a different toolchain
+   and a different machine.
+   ```sh
+   curl -s "https://api.github.com/repos/abhishekrana/herdr-dictate/actions/runs?head_sha=$(git rev-parse HEAD)" \
+     | jq -r '.workflow_runs[] | "\(.name) \(.status)/\(.conclusion)"'
+   ```
+   A cancelled run is not a pass - pushes cancel each other's runs, so the last green one may predate the commit.
+4. **Version.** `git tag --list 'v*' --sort=-v:refname | head -1` is the previous one. SemVer against it; while on
    `0.x`, a breaking change bumps the minor.
-4. **Prepare.** `scripts/release.sh vX.Y.Z` sets both manifests and regenerates `CHANGELOG.md`. It refuses a dirty
+5. **Prepare.** `scripts/release.sh vX.Y.Z` sets both manifests and regenerates `CHANGELOG.md`. It refuses a dirty
    tree, a tag that exists, and a `git-cliff` that is not the pinned version.
-5. **Review.** `git diff` — the changelog should name every user-visible change since the previous tag, and both
+6. **Review.** `git diff` — the changelog should name every user-visible change since the previous tag, and both
    manifests should carry the new version.
-6. **Commit and tag.**
+7. **Commit and tag.**
    ```sh
    git commit -am "chore(release): vX.Y.Z"
    git tag -a vX.Y.Z -m "herdr-dictate X.Y.Z"
    git push && git push origin vX.Y.Z
    ```
-7. **Watch.** `gh run watch` — the tag triggers `release.yml`, which re-runs the gate, builds with `--features
+8. **Watch.** `gh run watch` — the tag triggers `release.yml`, which re-runs the gate, builds with `--features
    vulkan`, and publishes the tarball, its checksum and a provenance attestation. Needs `gh auth login`.
-8. **Verify what shipped.** `gh release view vX.Y.Z` lists the artifacts, and
+9. **Verify what shipped.** `gh release view vX.Y.Z` lists the artifacts, and
    `gh attestation verify <tarball> --repo abhishekrana/herdr-dictate` checks the provenance.
 
 If the workflow fails, fix forward and cut the next patch. **A published tag is never moved or deleted** — installs
@@ -137,7 +145,9 @@ resolve their download by version, so a moved tag changes what an existing insta
   `chore(release)` are filtered out (`cliff.toml`).
 - `Cargo.toml` and `herdr-plugin.toml` both carry the version and CI fails if they disagree. `scripts/release.sh vX.Y.Z`
   sets both and regenerates the changelog; a published tag is never moved.
-- MSRV is `rust-version` in `Cargo.toml` and is gated in CI, because users build this plugin themselves on install.
+- Three toolchain versions, deliberately distinct: `rust-version` in `Cargo.toml` is the floor users must have,
+  `RUST_VERSION` in `scripts/versions.env` is what lints run under so a new clippy is adopted on purpose, and tests
+  and builds use whatever stable is installed. MSRV is `rust-version` in `Cargo.toml` and is gated in CI, because users build this plugin themselves on install.
   There is deliberately no `rust-toolchain.toml`.
 - Adding a subcommand means a `Command` variant, a function in `main.rs`, and — if Herdr should expose it — an entry in
   `herdr-plugin.toml`.

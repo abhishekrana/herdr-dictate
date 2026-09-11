@@ -10,6 +10,9 @@ skip() { skipped="$skipped  $1 - $2
 "; }
 step() { printf '\n\033[1m── %s\033[0m\n' "$1"; }
 
+# shellcheck source=scripts/versions.env
+. "$(dirname "$0")/versions.env"
+
 msrv=$(grep -m1 '^rust-version = ' Cargo.toml | cut -d'"' -f2)
 
 step "manifest versions"
@@ -21,11 +24,19 @@ if [ "$cargo_version" != "$plugin_version" ]; then
 fi
 echo "$cargo_version"
 
+# Pinned so local and CI lint identically. Tests use the installed stable.
+step "lint toolchain $RUST_VERSION"
+rustup toolchain list 2>/dev/null | grep -q "^$RUST_VERSION" || {
+    echo "not installed: scripts/install-dev-tools.sh" >&2
+    exit 1
+}
+cargo "+$RUST_VERSION" --version
+
 step "fmt"
-cargo fmt --all --check
+cargo "+$RUST_VERSION" fmt --all --check
 
 step "clippy"
-cargo clippy --all-targets -- -D warnings
+cargo "+$RUST_VERSION" clippy --all-targets -- -D warnings
 
 step "doc"
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --quiet
