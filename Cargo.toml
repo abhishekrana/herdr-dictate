@@ -53,3 +53,11 @@ tempfile = "3"
 [profile.release]
 strip = true
 lto = "thin"
+
+# Iteration only, never shipped: skips the whole-graph optimisation and keeps
+# incremental state, which is what the release profile trades away for speed.
+[profile.fast]
+inherits = "release"
+lto = false
+incremental = true
+strip = false

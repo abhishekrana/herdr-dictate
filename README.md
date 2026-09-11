@@ -178,7 +178,13 @@ reads as exactly that.
 ```sh
 scripts/install-dev-tools.sh     # cargo-deny, git-cliff, the MSRV toolchain
 scripts/check.sh                 # the gate CI runs; SKIP_DOCKER=1 skips the container
+
+cargo check                      # logic only, no codegen
+cargo build --profile fast       # runnable; skips the whole-graph optimisation
 ```
+
+`release` is what ships and what the gate checks. `fast` exists for iteration:
+`lto` costs seconds on every build and buys nothing until the binary is used.
 
 A clean local run means a clean CI run: lints use the toolchain pinned in `scripts/versions.env`, the same one CI
 installs. Tools the gate cannot find are reported as skipped. Release steps are in

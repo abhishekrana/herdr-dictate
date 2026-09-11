@@ -102,6 +102,12 @@ socket lives under `XDG_RUNTIME_DIR`.
 - **Build dependencies are user dependencies.** `herdr plugin install` compiles on the user's machine, so anything the
   build needs belongs in the README's Requirements rather than a contributor section.
 
+## Build profiles
+
+`release` ships and the gate checks it. `fast` (`cargo build --profile fast`) drops `lto` and keeps incremental state
+for iteration; `cargo check` is faster still when only the logic changed. Never ship `fast` - it skips the
+optimisation the model's speed depends on.
+
 ## Cutting a release
 
 Run these in order and stop at the first failure.
