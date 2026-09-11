@@ -21,6 +21,9 @@ pub struct ModelSpec {
 }
 
 /// Models this crate knows by name. Digests are from the publisher's index.
+///
+/// `q8_0` variants are quantised: about half the download and faster, at a
+/// small accuracy cost.
 pub const BUILTIN: &[ModelSpec] = &[
     ModelSpec {
         name: "tiny.en",
@@ -33,6 +36,18 @@ pub const BUILTIN: &[ModelSpec] = &[
         url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
         sha256: "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
         size_bytes: 147_964_211,
+    },
+    ModelSpec {
+        name: "base.en-q8_0",
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en-q8_0.bin",
+        sha256: "a4d4a0768075e13cfd7e19df3ae2dbc4a68d37d36a7dad45e8410c9a34f8c87e",
+        size_bytes: 81_781_811,
+    },
+    ModelSpec {
+        name: "small.en-q8_0",
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en-q8_0.bin",
+        sha256: "67a179f608ea6114bd3fdb9060e762b588a3fb3bd00c4387971be4d177958067",
+        size_bytes: 264_477_561,
     },
     ModelSpec {
         name: "small.en",
@@ -66,7 +81,7 @@ pub struct ModelRef {
 impl Default for ModelRef {
     fn default() -> Self {
         Self {
-            name: Some("base.en".into()),
+            name: Some("small.en-q8_0".into()),
             path: None,
             url: None,
             sha256: None,
@@ -227,6 +242,7 @@ mod tests {
 
     #[test]
     fn a_builtin_name_resolves_to_a_download() {
+        // Deliberately not the default, so this also proves the name wins.
         let reference = ModelRef {
             name: Some("base.en".into()),
             ..Default::default()
@@ -309,7 +325,7 @@ mod tests {
     #[test]
     fn naming_two_ways_at_once_is_refused() {
         let reference = ModelRef {
-            name: Some("base.en".into()),
+            name: Some("small.en-q8_0".into()),
             path: Some("/models/mine.bin".into()),
             url: None,
             sha256: None,

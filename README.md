@@ -79,7 +79,7 @@ threads = 0                  # 0 = one per core
 prompt = "Dictation for a coding terminal. Terms: worktree, dotfiles, herdr."
 
 [engine.model]
-name = "base.en"             # built-in: tiny.en, base.en, small.en
+name = "small.en-q8_0"       # tiny.en, base.en, base.en-q8_0, small.en-q8_0, small.en
 # path = "/models/ggml-medium.en.bin"    # a local file, used as-is
 # url = "https://.../ggml-large-v3.bin"  # anything, with a digest
 # sha256 = "..."
@@ -122,8 +122,24 @@ that each dictation is a fresh process, so Vulkan device setup and the model upl
 compute saving on one clip. A resident model server would change this; that is what makes the same GPU 2.7x faster in a
 long-running setup. Until then, CPU is a reasonable default and `openmp` may help more than a GPU feature.
 
-`small.en` is meaningfully more accurate than `base.en` - on the same clip it returned the sentence exactly where
-`base.en` got two words wrong - at roughly twice the time and a 465 MB download.
+## Models
+
+Everything runs inside this plugin. The model is downloaded and digest-verified by it, whisper.cpp is compiled in, and
+the resident server is this binary's own `serve` subcommand - there is no sidecar to install and nothing to run
+yourself. At runtime the binary needs only system libraries.
+
+Measured on the same clip, 4.0 s of speech:
+
+| model         | download | time  | transcript      |
+| ------------- | -------- | ----- | --------------- |
+| tiny.en       | 74 MB    | -     | -               |
+| base.en-q8_0  | 77 MB    | 2.7 s | two words wrong |
+| base.en       | 141 MB   | 2.8 s | two words wrong |
+| small.en-q8_0 | 252 MB   | 6.3 s | exact (default) |
+| small.en      | 465 MB   | 8.1 s | exact           |
+
+Within a size class the quantised `q8_0` build is strictly better here: the same transcript, faster, half the download.
+Pick `base.en-q8_0` if you would rather have speed than the last few words.
 
 ## Debugging
 
