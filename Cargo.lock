@@ -506,6 +506,7 @@ dependencies = [
  "tracing-subscriber",
  "ureq",
  "whisper-rs",
+ "whisper-rs-sys",
 ]
 
 [[package]]

@@ -32,9 +32,9 @@ jobs:
       # version, so caching first stores entries under the wrong key.
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo clippy --all-targets -- -D warnings
       - name: doc
-        run: cargo doc --no-deps --all-features
+        run: cargo doc --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
 
@@ -52,7 +52,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all-features --locked
+      - run: cargo test --locked
 
   # Proves the rust-version in Cargo.toml is honest. Users build this plugin
   # themselves on install, so an MSRV that drifts upward silently is a failed
@@ -69,4 +69,4 @@ jobs:
         with:
           toolchain: ${{ steps.msrv.outputs.version }}
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --all-features --locked
+      - run: cargo check --locked

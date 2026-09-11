@@ -221,9 +221,9 @@ fn transcribe(file: &std::path::Path) -> Result<()> {
     let samples: std::result::Result<Vec<i16>, _> = reader.samples::<i16>().collect();
     let samples = samples.context("reading samples")?;
 
-    let config = herdr_dictate::engine::Config::default();
-    let mut engine = herdr_dictate::engine::build(&config, &mut std::io::stderr())
-        .context("loading the engine")?;
+    let settings = Settings::load().context("reading the plugin config")?;
+    let mut engine =
+        engine::build(&settings.engine, &mut std::io::stderr()).context("loading the engine")?;
     eprintln!("{}", engine.describe());
 
     let started = std::time::Instant::now();

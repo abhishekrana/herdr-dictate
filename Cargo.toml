@@ -19,11 +19,15 @@ path = "src/main.rs"
 
 [features]
 default = []
-# Acceleration for the bundled engine. CPU works everywhere; these need the
-# matching SDK at build time, so release binaries ship one variant per backend.
-vulkan = []
-cuda = []
-metal = []
+# Acceleration for the bundled engine. CPU works everywhere; each of these needs
+# its own SDK at build time, so release binaries ship one variant per backend.
+#
+# whisper-rs does not forward whisper-rs-sys's vulkan feature, so it is enabled
+# on the sys crate directly. The version must match whisper-rs's own dependency.
+vulkan = ["dep:whisper-rs-sys", "whisper-rs-sys/vulkan"]
+cuda = ["whisper-rs/cuda"]
+metal = ["whisper-rs/metal"]
+hipblas = ["whisper-rs/hipblas"]
 
 [dependencies]
 anyhow = "1"
@@ -36,6 +40,7 @@ signal-hook = "0.3"
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 thiserror = "2"
 whisper-rs = "0.16"
+whisper-rs-sys = { version = "0.15", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.9"

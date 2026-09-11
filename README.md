@@ -90,6 +90,36 @@ and `url` are alternatives - set exactly one - and a URL without a digest is ref
 
 Run `herdr-dictate doctor` after changing `threshold`: it measures your room against it.
 
+## Acceleration
+
+GPU backends are opt-in cargo features, each needing its own SDK at build time, and they are mutually exclusive - do not
+build with more than one, and never with `--all-features`:
+
+```sh
+cargo build --release --features vulkan    # any Vulkan GPU (AMD, Intel, NVIDIA)
+cargo build --release --features cuda      # NVIDIA
+cargo build --release --features metal     # Apple
+cargo build --release --features hipblas   # AMD ROCm
+```
+
+`vulkan` enables the feature on `whisper-rs-sys` directly, because `whisper-rs` does not forward it.
+
+**Measured, and worth knowing before you spend a build on it.** On an AMD Radeon 860M, 4.0 s of speech, median of paired
+alternating runs:
+
+| model    | CPU   | Vulkan |
+| -------- | ----- | ------ |
+| base.en  | 3.4 s | 2.9 s  |
+| small.en | 6.5 s | 6.8 s  |
+
+The GPU buys little here and nothing at all with the larger model, even though it is linked and active. The reason is
+that each dictation is a fresh process, so Vulkan device setup and the model upload are paid every time and swamp the
+compute saving on one clip. A resident model server would change this; that is what makes the same GPU 2.7x faster in a
+long-running setup. Until then, CPU is a reasonable default and `openmp` may help more than a GPU feature.
+
+`small.en` is meaningfully more accurate than `base.en` - on the same clip it returned the sentence exactly where
+`base.en` got two words wrong - at roughly twice the time and a 465 MB download.
+
 ## Debugging
 
 `herdr-dictate doctor` runs one named check per thing that can break, each with a remedy, and exits non-zero when one
