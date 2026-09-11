@@ -52,12 +52,6 @@ tempfile = "3"
 
 [profile.release]
 strip = true
-lto = "thin"
-
-# Iteration only, never shipped: skips the whole-graph optimisation and keeps
-# incremental state, which is what the release profile trades away for speed.
-[profile.fast]
-inherits = "release"
+# No LTO: the work is in whisper.cpp, which it does not reach. Measured, it
+# costs most of the build and returns nothing.
 lto = false
-incremental = true
-strip = false

@@ -15,13 +15,13 @@ The loop, cheapest first. Each step subsumes the one above it, so run only as fa
 ```sh
 cargo check                               # logic only, no codegen
 cargo test                                # inline tests
-cargo build --profile fast                # runnable; skips the whole-graph optimisation
+cargo build --release --features vulkan   # what Herdr runs
 scripts/check.sh                          # the gate, before committing
 ```
 
-`release` is what ships and what the gate checks. `fast` exists for iteration: `lto` is paid on every release build
-and buys nothing until the binary runs - never ship it. The container step inside the gate rebuilds only when `src/`
-or the manifests change; docs, scripts and CI config do not reach it.
+One profile. `lto` is off because the work is in whisper.cpp and LTO does not reach it; measured, it cost most of the
+build and returned nothing. The container step inside the gate rebuilds only when `src/` or the manifests change;
+docs, scripts and CI config do not reach it.
 
 ```sh
 scripts/install-deps.sh                   # build deps, Debian/Ubuntu (cmake, libclang-dev, libasound2-dev, libvulkan-dev, glslc)
