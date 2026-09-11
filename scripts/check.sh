@@ -60,8 +60,8 @@ fi
 
 if command -v gitleaks >/dev/null 2>&1; then
     step "secrets"
-    gitleaks dir . --no-banner --redact
-    gitleaks git . --no-banner --redact
+    gitleaks dir . --config .gitleaks.toml --no-banner --redact
+    gitleaks git . --config .gitleaks.toml --no-banner --redact
 else
     skip "secrets" "https://github.com/gitleaks/gitleaks/releases"
 fi

@@ -1,0 +1,7 @@
+# Build output is not source; scanning it costs far more than the tree itself.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "build output"
+paths = ['''^target/''']
