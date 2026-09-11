@@ -107,8 +107,8 @@ Run these in order and stop at the first failure.
 2. **Gate.** `scripts/check.sh` passes with **nothing skipped**. A skip means a tool is missing; install it with
    `scripts/install-dev-tools.sh` rather than releasing unverified. Lints run under the toolchain pinned in
    `scripts/versions.env`, so local and CI judge the same code the same way.
-3. **CI is green on the commit being tagged.** Local success is not evidence: the runner has a different toolchain
-   and a different machine.
+3. **CI is green on `HEAD`.** Local success is not evidence: the runner has a different toolchain and a
+   different machine.
    ```sh
    curl -s "https://api.github.com/repos/abhishekrana/herdr-dictate/actions/runs?head_sha=$(git rev-parse HEAD)" \
      | jq -r '.workflow_runs[] | "\(.name) \(.status)/\(.conclusion)"'
@@ -120,16 +120,22 @@ Run these in order and stop at the first failure.
    tree, a tag that exists, and a `git-cliff` that is not the pinned version.
 6. **Review.** `git diff` — the changelog should name every user-visible change since the previous tag, and both
    manifests should carry the new version.
-7. **Commit and tag.**
+7. **Commit and push.**
    ```sh
    git commit -am "chore(release): vX.Y.Z"
-   git tag -a vX.Y.Z -m "herdr-dictate X.Y.Z"
-   git push && git push origin vX.Y.Z
+   git push
    ```
-8. **Watch.** `gh run watch` — the tag triggers `release.yml`, which re-runs the gate, builds with `--features
-   vulkan`, and publishes the tarball, its checksum and a provenance attestation. Needs `gh auth login`.
-9. **Verify what shipped.** `gh release view vX.Y.Z` lists the artifacts, and
-   `gh attestation verify <tarball> --repo abhishekrana/herdr-dictate` checks the provenance.
+8. **CI is green on the release commit.** Repeat step 3 against the new `HEAD`. The tag must name a commit the runner
+   has already passed, so `release.yml` is the gate's second run rather than its first.
+9. **Tag.**
+   ```sh
+   git tag -a vX.Y.Z -m "herdr-dictate X.Y.Z"
+   git push origin vX.Y.Z
+   ```
+10. **Watch.** `gh run watch` — the tag triggers `release.yml`, which re-runs the gate, builds with `--features
+    vulkan`, and publishes the tarball, its checksum and a provenance attestation. Needs `gh auth login`.
+11. **Verify what shipped.** `gh release view vX.Y.Z` lists the artifacts, and
+    `gh attestation verify <tarball> --repo abhishekrana/herdr-dictate` checks the provenance.
 
 If the workflow fails, fix forward and cut the next patch. **A published tag is never moved or deleted** — installs
 resolve their download by version, so a moved tag changes what an existing install would fetch.
