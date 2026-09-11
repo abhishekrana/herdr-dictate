@@ -14,7 +14,7 @@ server is this binary. There is no sidecar to install and nothing to run yoursel
 ## Requirements
 
 Installing fetches the release binary when one matches your machine - x86_64 Linux with `libvulkan1` - and builds from
-source otherwise. A source build needs:
+source otherwise, with GPU support when the toolchain for it is present. A source build needs:
 
 ```sh
 scripts/install-deps.sh          # Debian and Ubuntu
@@ -25,7 +25,7 @@ scripts/install-deps.sh          # Debian and Ubuntu
 | Rust 1.88+                               | building                                   |
 | `build-essential` `cmake` `libclang-dev` | compiling whisper.cpp                      |
 | `libasound2-dev` `pkg-config`            | microphone capture (ALSA)                  |
-| `libvulkan-dev` `glslc`                  | GPU acceleration, `--features vulkan` only |
+| `libvulkan-dev` `glslc`                  | GPU acceleration; used automatically when present |
 
 At runtime only `libasound2`, `libvulkan1` and a GPU driver are needed; a desktop system normally has them. TLS roots
 are compiled in, so no system certificate store is required to fetch a model.
@@ -120,20 +120,32 @@ Within a size class the quantised `q8_0` build was faster for half the download 
 
 ## Acceleration
 
-```sh
-cargo build --release --features vulkan
-```
+**Vulkan is the default wherever it is available; the CPU build is the fallback.** Installing picks the fastest option
+this machine can run, in this order:
 
-One Vulkan build drives AMD, Intel and NVIDIA, because every vendor's driver ships a Vulkan ICD. With no GPU present the
-same binary runs on the CPU, without configuration.
+1. the released Vulkan binary, when `libvulkan1` is present
+2. a source build with `--features vulkan`, when `libvulkan-dev` and `glslc` are present
+3. a plain source build, which runs anywhere
+
+One Vulkan build drives AMD, Intel and NVIDIA, because every vendor's driver ships a Vulkan ICD. With no GPU present
+the same binary still runs on the CPU, without configuration - so step 3 is only reached when the build toolchain for
+Vulkan is missing.
+
+It is worth roughly eight times, measured with `small.en-q8_0` on a warm server:
 
 | machine                             | GPU   | CPU only |
 | ----------------------------------- | ----- | -------- |
 | discrete NVIDIA GPU, 24 CPU threads | 0.2 s | 2.0 s    |
 | integrated AMD GPU, 16 CPU threads  | 0.6 s | 5.1 s    |
 
-`cuda`, `metal` and `hipblas` also exist and may be faster on their own hardware, but each needs its own SDK. They are
-mutually exclusive - never build with `--all-features`.
+To build by hand:
+
+```sh
+cargo build --release --features vulkan
+```
+
+`cuda`, `metal` and `hipblas` also exist and may be faster on their own hardware, but each needs its own SDK and none
+is selected automatically. They are mutually exclusive - never build with `--all-features`.
 
 ## Troubleshooting
 
