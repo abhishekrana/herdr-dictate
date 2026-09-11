@@ -13,8 +13,20 @@ case "$version" in
 esac
 number=${version#v}
 
-command -v git-cliff >/dev/null 2>&1 || {
-    echo "git-cliff is required: cargo install git-cliff" >&2
+# shellcheck source=scripts/versions.env
+. "$(dirname "$0")/versions.env"
+
+# Resolve the pinned build rather than whatever PATH finds first, so the notes
+# do not depend on which machine generated them.
+cliff="${CARGO_HOME:-$HOME/.cargo}/bin/git-cliff"
+[ -x "$cliff" ] || cliff=$(command -v git-cliff || true)
+[ -n "$cliff" ] || {
+    echo "git-cliff is required: scripts/install-dev-tools.sh" >&2
+    exit 1
+}
+have=$("$cliff" --version | awk '{print $2}')
+[ "$have" = "$GIT_CLIFF_VERSION" ] || {
+    echo "git-cliff $have found, $GIT_CLIFF_VERSION pinned: scripts/install-dev-tools.sh" >&2
     exit 1
 }
 [ -z "$(git status --porcelain)" ] || {
@@ -32,7 +44,7 @@ for manifest in Cargo.toml herdr-plugin.toml; do
 done
 cargo update --workspace --quiet
 
-git-cliff --config cliff.toml --tag "$version" -o CHANGELOG.md
+"$cliff" --config cliff.toml --tag "$version" -o CHANGELOG.md
 
 echo
 echo "Prepared $version. Review, then:"
