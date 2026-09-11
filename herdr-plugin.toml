@@ -1,0 +1,18 @@
+id = "abhishekrana.dictate"
+name = "Dictate"
+version = "0.1.0"
+min_herdr_version = "0.8.0"
+description = "Local speech-to-text dictation into the focused Herdr pane"
+platforms = ["linux", "macos"]
+
+# Users install from GitHub, where only sources are published. A release build
+# is the first thing that runs, before Herdr registers the plugin at all.
+[[build]]
+command = ["cargo", "build", "--release"]
+
+[[actions]]
+id = "doctor"
+title = "Dictate: doctor"
+description = "Report the wiring this plugin depends on"
+contexts = ["workspace"]
+command = ["./target/release/herdr-dictate", "doctor"]

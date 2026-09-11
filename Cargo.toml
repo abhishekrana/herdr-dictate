@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.85"
 license = "MIT"
 description = "Local speech-to-text dictation into the focused Herdr pane"
-repository = "https://github.com/OWNER/herdr-dictate"
+repository = "https://github.com/abhishekrana/herdr-dictate"
 keywords = ["herdr", "dictation", "speech-to-text", "whisper"]
 categories = ["command-line-utilities"]
 
