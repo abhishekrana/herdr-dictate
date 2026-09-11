@@ -29,7 +29,12 @@ impl Bundled {
 
         let source = config.model.resolve(&model::cache_dir()?)?;
         let path = model::ensure(&source, progress)?;
-        let context = WhisperContext::new_with_params(&path, WhisperContextParameters::default())
+        // whisper-rs derives use_gpu from its own `_gpu` feature, which the
+        // vulkan backend does not set, so it is asked for explicitly. With no
+        // GPU backend compiled in, whisper.cpp ignores it.
+        let mut parameters = WhisperContextParameters::default();
+        parameters.use_gpu(true);
+        let context = WhisperContext::new_with_params(&path, parameters)
             .map_err(|e| Error::Model(format!("loading {}: {e}", path.display())))?;
 
         Ok(Self {
@@ -69,6 +74,10 @@ impl Engine for Bundled {
         params.set_translate(false);
         params.set_n_threads(self.threads);
         params.set_suppress_blank(true);
+        // whisper.cpp otherwise retries a low-confidence window at rising
+        // temperatures, several times over. Dictation wants the first answer.
+        params.set_temperature_inc(0.0);
+        params.set_token_timestamps(false);
         // Each dictation stands alone; carrying context across them lets one
         // clip's words bias the next.
         params.set_no_context(true);

@@ -109,18 +109,20 @@ cargo build --release --features hipblas   # AMD ROCm
 
 `vulkan` enables the feature on `whisper-rs-sys` directly, because `whisper-rs` does not forward it.
 
-**Measured, and worth knowing before you spend a build on it.** On an AMD Radeon 860M, 4.0 s of speech, median of paired
-alternating runs:
+**Build with `vulkan` if you can.** Measured on an AMD Radeon 860M with `small.en-q8_0`, 4.0 s of speech, warm server:
 
-| model    | CPU   | Vulkan |
-| -------- | ----- | ------ |
-| base.en  | 3.4 s | 2.9 s  |
-| small.en | 6.5 s | 6.8 s  |
+| build                     | time  | transcript |
+| ------------------------- | ----- | ---------- |
+| `--features vulkan`       | 0.6 s | exact      |
+| default (CPU, 16 threads) | 5.1 s | exact      |
 
-The GPU buys little here and nothing at all with the larger model, even though it is linked and active. The reason is
-that each dictation is a fresh process, so Vulkan device setup and the model upload are paid every time and swamp the
-compute saving on one clip. A resident model server would change this; that is what makes the same GPU 2.7x faster in a
-long-running setup. Until then, CPU is a reasonable default and `openmp` may help more than a GPU feature.
+The GPU is worth about 8.5x here. Note that whisper-rs derives `use_gpu` from its own `_gpu` feature, which the vulkan
+backend does not set, so this crate asks for the GPU explicitly - without that, whisper.cpp compiles the Vulkan backend
+in and then never uses it.
+
+For reference, the same clip through other stacks: whisper.cpp Vulkan behind `whisper-server` takes 0.47 s, and
+faster-whisper `small.en` int8 on CPU takes 1.4 s - the latter beats whisper.cpp on CPU by roughly 3.6x, which is why a
+CPU-only build is the slow path here.
 
 ## Models
 
