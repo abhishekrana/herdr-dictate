@@ -115,6 +115,26 @@ socket lives under `XDG_RUNTIME_DIR`.
 - **Build dependencies are user dependencies.** `herdr plugin install` compiles on the user's machine, so anything the
   build needs belongs in the README's Requirements rather than a contributor section.
 
+## Deploy
+
+Gate, push, then make it live on the running Herdr.
+
+```sh
+scripts/check.sh && git push
+cargo build --release --features vulkan   # what Herdr runs
+```
+
+An action spawns the binary per invocation, so a rebuild is live with no reload. The rest only when it applies:
+
+- **The manifest changed** (a new action, pane, hook): Herdr reads `herdr-plugin.toml` when it registers a plugin, so
+  re-register - `herdr plugin unlink abhishekrana.dictate && herdr plugin link .`
+- **The suggested keybindings changed**: `herdr server reload-config` after `setup` writes them.
+- **The resident model server is running**: `herdr-dictate serve-stop`, or it keeps serving from the old binary until
+  it idles out.
+
+Development registers the working tree with `herdr plugin link .`; a published release is consumed with
+`herdr plugin install abhishekrana/herdr-dictate`. The two are mutually exclusive - unlink before installing.
+
 ## Cutting a release
 
 Run these in order and stop at the first failure.
