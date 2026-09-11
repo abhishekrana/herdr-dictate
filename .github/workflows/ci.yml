@@ -54,6 +54,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --locked
 
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # gitleaks scans history, which needs more than the default shallow clone.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+
   # Proves the rust-version in Cargo.toml is honest. Users build this plugin
   # themselves on install, so an MSRV that drifts upward silently is a failed
   # `herdr plugin install` on someone else's machine.
