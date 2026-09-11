@@ -7,6 +7,7 @@ Notable changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) spi
 
 ### Added
 
+- Install fetches the release build, and releases carry provenance (3445e0d)
 - One gate script for both local runs and CI, on latest stable deps (b28cb2a)
 - One command to prepare a release, and a check that versions agree (d7a61bb)
 - Release workflow, dependency verification and supply-chain checks (b956c74)
