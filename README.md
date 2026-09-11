@@ -9,7 +9,7 @@ transcript is typed where you are looking. Audio never leaves the machine.
 whisper.cpp is compiled in, the model is downloaded and verified by the plugin, and the model server is this same
 binary. There is no sidecar to install and nothing to run yourself.
 
-> **Status: working, unreleased.** Linux only - macOS needs a resampler.
+> Linux only - macOS needs a resampler.
 
 ## Requirements
 
