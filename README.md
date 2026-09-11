@@ -81,6 +81,10 @@ Binding it is the desktop's job, so the plugin writes nothing outside Herdr.
 | sway, Hyprland | `bindsym $mod+d exec …` in the config                   |
 | macOS          | skhd, Karabiner-Elements or a Shortcuts service        |
 
+A single key works, a bare modifier included - right Alt (`Alt_R`) binds
+cleanly on GNOME. Name `herdr` by its full path: a shortcut does not run with a
+login shell's `PATH`.
+
 ### Status chip
 
 `status` prints one chip for Herdr's tab bar, so the state is visible in every
