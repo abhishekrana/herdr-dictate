@@ -12,6 +12,8 @@ this same binary. Linux only (macOS needs a resampler). Audio never leaves the m
 
 ```sh
 scripts/install-deps.sh                   # build deps, Debian/Ubuntu (cmake, libclang-dev, libasound2-dev, libvulkan-dev, glslc)
+scripts/install-dev-tools.sh              # cargo-deny, git-cliff, the MSRV toolchain; versions pinned in scripts/versions.env
+scripts/check.sh                          # the gate; CI runs this same script, SKIP_DOCKER=1 to skip the container
 cargo build --release
 cargo build --release --features vulkan   # GPU; one Vulkan build serves AMD, Intel and NVIDIA
 cargo test
@@ -23,6 +25,9 @@ RUSTDOCFLAGS=-D warnings cargo doc --no-deps
 cargo deny check                          # licences and advisories; config in deny.toml
 docker build -f test/Dockerfile -t herdr-dictate-src .   # build-from-source on a bare Ubuntu, as CI does
 ```
+
+`scripts/check.sh` is the gate: a clean local run means a clean CI run. Tools it cannot find are reported as skipped
+rather than failing, so it works on a fresh clone. The commands below are what it runs.
 
 Acceleration features (`vulkan`, `cuda`, `metal`, `hipblas`) are mutually exclusive — never build with
 `--all-features`. `vulkan` is wired to `whisper-rs-sys` directly because `whisper-rs` does not forward it.
@@ -78,6 +83,20 @@ Herdr injects `HERDR_SOCKET_PATH`, `HERDR_PLUGIN_CONTEXT_JSON`, `HERDR_PANE_ID`,
 `HERDR_PLUGIN_STATE_DIR`. Every lookup treats empty as unset and has a `HOME`-based fallback, so the binary stays
 runnable outside Herdr. `HERDR_CONFIG_PATH` overrides the user config location (the tests use it). The model server's
 socket lives under `XDG_RUNTIME_DIR`.
+
+## Rules
+
+- **Self-sufficient.** No external server, script or runtime the user has to install or run; the only program this
+  binary starts is itself (`server::spawn`). An engine backend that posted to a separate transcription server was
+  written and deliberately removed — it makes the plugin unusable by anyone who has not set that server up.
+- **Nothing personal or work-related in this repository.** The public identity this project is published under is the
+  exception and the whole of it: the owner name in `LICENSE`, and the GitHub handle in the plugin id, URLs and the
+  commit identity. Everything else stays out — employer, colleagues, hostnames, internal addresses, real email
+  addresses, home directory paths, machine names, credentials — in code, comments, test fixtures and commit messages
+  alike. The git identity is repo-local because the global one is a work address; CI runs gitleaks over the tree and
+  the full history.
+- **Build dependencies are user dependencies.** `herdr plugin install` compiles on the user's machine, so anything the
+  build needs belongs in the README's Requirements rather than a contributor section.
 
 ## Conventions
 
