@@ -3,21 +3,26 @@
 [![ci](https://github.com/abhishekrana/herdr-dictate/actions/workflows/ci.yml/badge.svg)](https://github.com/abhishekrana/herdr-dictate/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Local speech-to-text dictation into the focused [Herdr](https://herdr.dev) pane. Press a key, speak, and the
-transcript is typed into the pane you are looking at. Audio never leaves the machine.
+Local speech-to-text dictation into the focused [Herdr](https://herdr.dev) pane. Press a key, speak, and the transcript
+is typed into the pane you are looking at. Audio never leaves the machine.
 
-> **Status: early.** The socket client and transcript delivery work and are tested. Capture, the speech engine and
-> the recording indicator are not built yet, so there is nothing useful to install today.
+> **Status: working, unreleased.** Dictation runs end to end on Linux. There is no recording indicator yet, and macOS
+> needs a resampler before it can be enabled.
 
 ## Design
 
 **The target pane is the one Herdr names, and is never recomputed.** Herdr hands every plugin command a
 `focused_pane_id`; deriving one instead from the agent list disagrees with the user as soon as two agents are live in
-the same place. A caller that arrives with no invocation context - a global hotkey, say - asks the server which pane
-is focused rather than guessing.
+the same place. A caller that arrives with no invocation context - a global hotkey, say - asks the server which pane is
+focused rather than guessing.
 
-**Delivery inserts, it does not submit.** The transcript lands in the pane's input so you can stack takes, edit them
-and send when you mean to. Submitting is a separate, explicit `--submit`.
+**A dictation is two invocations.** The first press records and waits; the second finds it and asks it to stop, and the
+first then transcribes and delivers. The target pane is latched by the first press, because the words belong where you
+were looking when you spoke. A state file whose process is gone is cleared rather than believed, so a recorder that
+crashed cannot wedge every later press.
+
+**Delivery inserts, it does not submit.** The transcript lands in the pane's input so you can stack takes, edit them and
+send when you mean to. Submitting is a separate, explicit `--submit`.
 
 **Nothing is inferred from the CLI.** The plugin speaks the socket API directly, and every method name and parameter
 shape is taken from the bundled schema rather than from the shape of a shell command.
@@ -34,8 +39,8 @@ Herdr plugins cannot register their own keys, so bind them once:
 herdr-dictate setup          # shows the bindings, asks, writes, reloads the server
 ```
 
-It keeps a `.bak`, appends rather than re-serialising so your comments survive, refuses to touch a config that is
-not valid TOML, and matches by action rather than by key - so a binding you moved is not offered again.
+It keeps a `.bak`, appends rather than re-serialising so your comments survive, refuses to touch a config that is not
+valid TOML, and matches by action rather than by key - so a binding you moved is not offered again.
 
 ## Usage
 
@@ -46,12 +51,40 @@ herdr-dictate setup [--apply|--print]
 herdr-dictate doctor               # report the wiring this plugin depends on
 ```
 
-| exit | meaning |
-| ---- | ------- |
-| 0 | success |
-| 1 | failure |
-| 2 | unknown subcommand or bad arguments |
-| 3 | declared in the manifest, not built yet |
+| exit | meaning                             |
+| ---- | ----------------------------------- |
+| 0    | success                             |
+| 1    | failure                             |
+| 2    | unknown subcommand or bad arguments |
+
+## Configuration
+
+Optional, at `config.toml` in the plugin's config directory (`herdr plugin config-dir abhishekrana.dictate`):
+
+```toml
+[engine]
+language = "en"
+threads = 0                  # 0 = one per core
+# Biases the vocabulary. Listed terms come out right; terms absent from it are
+# likelier to be mis-heard, so change this by measurement rather than by taste.
+prompt = "Dictation for a coding terminal. Terms: worktree, dotfiles, herdr."
+
+[engine.model]
+name = "base.en"             # built-in: tiny.en, base.en, small.en
+# path = "/models/ggml-medium.en.bin"    # a local file, used as-is
+# url = "https://.../ggml-large-v3.bin"  # anything, with a digest
+# sha256 = "..."
+
+[silence]
+threshold = 300.0            # rms above which a frame counts as speech
+trailing_secs = 2.0          # silence that ends a recording; 0 disables auto-stop
+max_secs = 120.0
+```
+
+Models download on first use into the plugin's state directory and are verified against a pinned SHA-256. `name`, `path`
+and `url` are alternatives - set exactly one - and a URL without a digest is refused.
+
+Run `herdr-dictate doctor` after changing `threshold`: it measures your room against it.
 
 ## Debugging
 
@@ -78,8 +111,8 @@ Everything else goes to stderr, which Herdr captures:
 herdr plugin log list --plugin abhishekrana.dictate
 ```
 
-Set `HERDR_DICTATE_LOG=debug` for more. A failed delivery names the pane and Herdr's own error code, so
-`pane_not_found` reads as exactly that rather than as silence.
+Set `HERDR_DICTATE_LOG=debug` for more. A failed delivery names the pane and Herdr's own error code, so `pane_not_found`
+reads as exactly that rather than as silence.
 
 ## Building
 
@@ -89,8 +122,8 @@ cargo test
 ```
 
 MSRV is declared in `Cargo.toml`. There is deliberately no `rust-toolchain.toml`: pinning one would force every user
-onto that exact toolchain. Acceleration for the speech engine will sit behind the `vulkan`, `cuda` and `metal`
-features, with the CPU path always available.
+onto that exact toolchain. Acceleration for the speech engine will sit behind the `vulkan`, `cuda` and `metal` features,
+with the CPU path always available.
 
 ## License
 

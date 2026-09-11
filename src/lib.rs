@@ -15,6 +15,8 @@ pub mod doctor;
 pub mod engine;
 pub mod ipc;
 pub mod model;
+pub mod session;
+pub mod settings;
 pub mod setup;
 
 /// Namespace Herdr qualifies this plugin's actions and state directories with.

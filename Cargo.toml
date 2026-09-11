@@ -30,7 +30,9 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 cpal = "0.18"
 hound = "3.5"
+rustix = { version = "1", features = ["process"] }
 sha2 = "0.10"
+signal-hook = "0.3"
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 thiserror = "2"
 whisper-rs = "0.16"

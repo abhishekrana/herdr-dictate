@@ -7,10 +7,10 @@ use std::process::ExitCode;
 
 use anyhow::{Context as _, Result};
 use clap::{Parser, Subcommand};
-use herdr_dictate::{capture, config, context::Context, doctor, ipc::Client, setup};
-
-/// Distinguishes "declared but not built yet" from an unknown command.
-const EXIT_NOT_IMPLEMENTED: u8 = 3;
+use herdr_dictate::{
+    capture, config, context::Context, doctor, engine, ipc::Client, session, session::Session,
+    settings::Settings, setup,
+};
 
 #[derive(Parser)]
 #[command(
@@ -80,12 +80,7 @@ fn main() -> ExitCode {
 
 fn run() -> Result<ExitCode> {
     match Cli::parse().command {
-        Command::Toggle { .. } => {
-            tracing::error!(
-                "toggle is declared but not built yet: capture and the speech engine are still to come"
-            );
-            Ok(ExitCode::from(EXIT_NOT_IMPLEMENTED))
-        }
+        Command::Toggle { submit } => toggle(submit),
         Command::Deliver { submit } => deliver(submit).map(|()| ExitCode::SUCCESS),
         Command::Setup { apply, print } => {
             let mode = match (apply, print) {
@@ -101,6 +96,67 @@ fn run() -> Result<ExitCode> {
         Command::Transcribe { file } => transcribe(&file).map(|()| ExitCode::SUCCESS),
         Command::Doctor => Ok(run_doctor()),
     }
+}
+
+/// A dictation is two invocations: the first records, the second stops it.
+fn toggle(submit: bool) -> Result<ExitCode> {
+    if let Some(running) = session::live()? {
+        session::stop(&running).context("stopping the recorder")?;
+        tracing::info!(pid = running.pid, "stopping");
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    let client = Client::from_env().context("connecting to Herdr")?;
+    let pane = match Context::from_env()?.target_pane() {
+        Some(pane) => pane,
+        None => client
+            .focused_pane()
+            .context("asking Herdr which pane is focused")?,
+    };
+    let settings = Settings::load().context("reading the plugin config")?;
+
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    signal_hook::flag::register(signal_hook::consts::SIGTERM, std::sync::Arc::clone(&stop))
+        .context("registering the stop signal")?;
+
+    session::begin(&Session {
+        pid: std::process::id(),
+        pane: pane.clone(),
+        submit,
+    })?;
+    tracing::info!(%pane, submit, "recording");
+    let recorded = capture::record(settings.silence.into(), stop);
+    // Cleared whatever happened, so a failure never wedges the next press.
+    let _ = session::end();
+    let recording = recorded.context("recording")?;
+
+    if recording.samples.is_empty() {
+        tracing::info!("nothing recorded");
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    let mut engine =
+        engine::build(&settings.engine, &mut std::io::stderr()).context("loading the engine")?;
+    let text = engine
+        .transcribe(&recording.samples)
+        .context("transcribing")?;
+    if text.is_empty() {
+        tracing::info!(secs = recording.duration().as_secs_f64(), "no speech");
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    // strip_non_speech collapses whitespace, so a dictated newline cannot
+    // submit the prompt; only --submit presses Enter.
+    client
+        .send_text(&pane, &text)
+        .with_context(|| format!("typing into {pane}"))?;
+    if submit {
+        client
+            .send_keys(&pane, &["enter"])
+            .with_context(|| format!("submitting in {pane}"))?;
+    }
+    tracing::info!(%pane, chars = text.len(), stopped_by = ?recording.stopped_by, "delivered");
+    Ok(ExitCode::SUCCESS)
 }
 
 fn deliver(submit: bool) -> Result<()> {
