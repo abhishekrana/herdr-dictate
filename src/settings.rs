@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::audio::SilenceConfig;
 use crate::engine;
-use crate::{Error, Result};
+use crate::{Error, PLUGIN_ID, Result};
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -15,6 +15,28 @@ pub struct Settings {
     pub engine: engine::Config,
     pub silence: Silence,
     pub server: Server,
+    pub status: Status,
+}
+
+/// The tab bar chip's glyphs. Herdr strips control sequences from a command
+/// entry, so only a glyph can carry state. Monochrome ones take the tab bar's
+/// own colour; a coloured one needs a font that draws it in colour.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Status {
+    pub idle: String,
+    pub recording: String,
+    pub transcribing: String,
+}
+
+impl Default for Status {
+    fn default() -> Self {
+        Self {
+            idle: "\u{25cb}".into(),
+            recording: "\u{25cf}".into(),
+            transcribing: "\u{25cc}".into(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -73,10 +95,20 @@ impl From<Silence> for SilenceConfig {
     }
 }
 
+/// Herdr names the config directory for a plugin process. The chip runs as a
+/// plain command with no such environment, so the fallback resolves the
+/// directory Herdr would have given.
 pub fn path() -> Option<PathBuf> {
-    std::env::var_os("HERDR_PLUGIN_CONFIG_DIR")
-        .filter(|v| !v.is_empty())
-        .map(|dir| PathBuf::from(dir).join("config.toml"))
+    if let Some(dir) = std::env::var_os("HERDR_PLUGIN_CONFIG_DIR").filter(|v| !v.is_empty()) {
+        return Some(PathBuf::from(dir).join("config.toml"));
+    }
+    let home = std::env::var_os("HOME").filter(|v| !v.is_empty())?;
+    Some(
+        PathBuf::from(home)
+            .join(".config/herdr/plugins/config")
+            .join(PLUGIN_ID)
+            .join("config.toml"),
+    )
 }
 
 impl Settings {
@@ -107,6 +139,22 @@ mod tests {
             settings.silence.threshold,
             SilenceConfig::default().threshold
         );
+    }
+
+    #[test]
+    fn status_glyphs_default_to_monochrome() {
+        let settings: Settings = toml::from_str("").unwrap();
+        assert_eq!(settings.status.idle, "\u{25cb}");
+        assert_eq!(settings.status.recording, "\u{25cf}");
+        assert_eq!(settings.status.transcribing, "\u{25cc}");
+    }
+
+    #[test]
+    fn one_status_glyph_leaves_the_others_alone() {
+        let settings: Settings = toml::from_str("[status]\nrecording = \"\u{1f7e2}\"\n").unwrap();
+        assert_eq!(settings.status.recording, "\u{1f7e2}");
+        assert_eq!(settings.status.idle, Status::default().idle);
+        assert_eq!(settings.status.transcribing, Status::default().transcribing);
     }
 
     #[test]

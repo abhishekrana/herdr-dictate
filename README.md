@@ -100,10 +100,13 @@ tab_bar_right = [
 The plugin is not on `PATH`, so the entry names the binary by its full path.
 `doctor` prints the line to paste, with the path filled in.
 
-⚪ idle, 🟢 recording, 🟡 while the model runs. Herdr strips control
-sequences from a command entry, so the colour is in the glyph rather than in an
-escape. Every state is a two-cell emoji and the label never changes, so the
-entry keeps its width.
+`○` idle, `●` recording, `◌` while the model runs. Herdr strips control
+sequences from a command entry, so only a glyph can carry state. The defaults
+are monochrome and take the tab bar's own colour, so they follow any theme.
+`[status]` swaps them; a coloured glyph needs a font that draws it in colour,
+and a flat emoji font suits a status bar better than a glossy one.
+
+Use one display width across all three states, or the chip shifts as it changes.
 
 Herdr has no clickable surface a plugin can add to, so the chip reports state
 and the key does the work.
@@ -141,6 +144,11 @@ max_secs = 120.0
 [server]
 enabled = true
 idle_secs = 300              # 0 keeps the model resident forever
+
+[status]                     # the tab bar chip's glyphs
+idle = "○"
+recording = "●"
+transcribing = "◌"
 ```
 
 `name`, `path` and `url` are alternatives; set exactly one. Models download on first use and are verified against a

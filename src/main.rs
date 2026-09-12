@@ -115,16 +115,17 @@ fn run() -> Result<ExitCode> {
     }
 }
 
-/// One chip for the tab bar. Herdr strips control sequences from a command
-/// entry, so colour has to come from the glyph; emoji circles are two cells
-/// each, so the chip keeps its width across states.
+/// One chip for the tab bar: the glyph carries the state, the label holds the
+/// width. An unreadable config falls back to the default glyphs, so the chip
+/// still draws.
 fn status() -> Result<()> {
-    let label = match session::peek().context("reading the dictation state")? {
-        Some(session) if session.phase == Phase::Transcribing => "\u{1f7e1} dictate",
-        Some(_) => "\u{1f7e2} dictate",
-        None => "\u{26aa} dictate",
+    let glyphs = Settings::load().unwrap_or_default().status;
+    let glyph = match session::peek().context("reading the dictation state")? {
+        Some(session) if session.phase == Phase::Transcribing => glyphs.transcribing,
+        Some(_) => glyphs.recording,
+        None => glyphs.idle,
     };
-    println!("{label}");
+    println!("{glyph} dictate");
     Ok(())
 }
 
