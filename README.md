@@ -100,9 +100,10 @@ tab_bar_right = [
 The plugin is not on `PATH`, so the entry names the binary by its full path.
 `doctor` prints the line to paste, with the path filled in.
 
-`○` idle, `●` recording, `◌` while the model runs. Herdr strips control
-characters from a command entry, so the glyph carries the state rather than
-colour. The label never changes, so the entry keeps its width.
+⚪ idle, 🟢 recording, 🟡 while the model runs. Herdr strips control
+sequences from a command entry, so the colour is in the glyph rather than in an
+escape. Every state is a two-cell emoji and the label never changes, so the
+entry keeps its width.
 
 Herdr has no clickable surface a plugin can add to, so the chip reports state
 and the key does the work.
