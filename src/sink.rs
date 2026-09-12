@@ -76,7 +76,7 @@ impl Sink {
             Self::Local(client) => client.set_pane_label(pane, label, ttl),
             Self::Remote(target) => {
                 let script = remote::label_script(target, pane, Some((label, ttl)));
-                remote::run(&target.ssh, &script).map(|_| ())
+                remote::run(&target.ssh, "label", &script).map(|_| ())
             }
         }
     }
@@ -86,7 +86,7 @@ impl Sink {
             Self::Local(client) => client.clear_pane_label(pane),
             Self::Remote(target) => {
                 let script = remote::label_script(target, pane, None);
-                remote::run(&target.ssh, &script).map(|_| ())
+                remote::run(&target.ssh, "label-clear", &script).map(|_| ())
             }
         }
     }
@@ -132,12 +132,13 @@ fn deliver_remote(target: &Target, pane: &str, text: &str, submit: bool) -> Resu
     }
     let script = remote::deliver_script(target, pane, text, submit);
 
-    let mut output = remote::run(&target.ssh, &script)?;
+    let mut output = remote::run(&target.ssh, "deliver", &script)?;
     if output.is_transport_failure() {
         // A shared connection can go stale between dictations; ssh reconnects
         // on its own, so one retry is the whole recovery.
+        tracing::warn!(machine = %target.label, "transport failed; retrying once");
         std::thread::sleep(Duration::from_millis(200));
-        output = remote::run(&target.ssh, &script)?;
+        output = remote::run(&target.ssh, "deliver-retry", &script)?;
     }
 
     match output.code {
@@ -183,7 +184,14 @@ pub fn selected(config: &settings::Remote) -> Result<Option<Latch>> {
     let nonce = remote::nonce();
     let configured = config.machine(&machine.id, &machine.label).herdr;
     let script = remote::resolve_script(&machine.session, &configured, &nonce);
-    let output = remote::run(&ssh, &script)?;
+    tracing::debug!(
+        machine = %machine.label,
+        host = %machine.target,
+        session = %machine.session,
+        shared = ssh.control.is_some(),
+        "resolving"
+    );
+    let output = remote::run(&ssh, "resolve", &script)?;
     if output.code != 0 && output.stdout.trim().is_empty() {
         return Err(Error::Remote {
             label: machine.label,
@@ -191,6 +199,15 @@ pub fn selected(config: &settings::Remote) -> Result<Option<Latch>> {
         });
     }
     let probe = remote::parse_probe(&output.stdout, &nonce)?;
+    // What the latch decided, which is the first thing to check when words
+    // land somewhere unexpected.
+    tracing::info!(
+        machine = %machine.label,
+        pane = %probe.focused_pane,
+        occupant = ?probe.occupant(),
+        herdr = %probe.herdr,
+        "latched"
+    );
 
     Ok(Some(Latch {
         pane: probe.focused_pane.clone(),

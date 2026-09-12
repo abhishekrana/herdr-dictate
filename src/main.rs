@@ -228,6 +228,7 @@ fn toggle(submit: bool) -> Result<ExitCode> {
 
     // strip_non_speech collapses whitespace, so a dictated newline cannot
     // submit the prompt; only --submit presses Enter.
+    let handed_over = std::time::Instant::now();
     let delivery = match sink.deliver(&pane, &text, submit) {
         Ok(delivery) => delivery,
         Err(err) => {
@@ -245,6 +246,7 @@ fn toggle(submit: bool) -> Result<ExitCode> {
         at = sink.describe(),
         chars = text.len(),
         ?delivery,
+        ms = handed_over.elapsed().as_millis(),
         stopped_by = ?recording.stopped_by,
         "delivered"
     );
@@ -266,11 +268,15 @@ fn toggle(submit: bool) -> Result<ExitCode> {
 /// user spends speaking anyway, so failing here is not worth reporting as a
 /// failure of anything.
 fn warm() -> Result<()> {
+    let started = std::time::Instant::now();
     let settings = Settings::load().context("reading the plugin config")?;
     match sink::selected(&settings.remote) {
-        Ok(Some(latch)) => {
-            tracing::info!(at = latch.sink.describe(), pane = %latch.pane, "warm");
-        }
+        Ok(Some(latch)) => tracing::info!(
+            at = latch.sink.describe(),
+            pane = %latch.pane,
+            ms = started.elapsed().as_millis(),
+            "warm"
+        ),
         Ok(None) => tracing::info!("no machine selected"),
         Err(err) => tracing::debug!(%err, "could not warm the connection"),
     }

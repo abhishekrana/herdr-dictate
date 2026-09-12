@@ -151,7 +151,12 @@ pub fn ssh_args(ssh: &Ssh) -> Vec<String> {
 /// The only OS-touching function in this module. A non-zero exit is returned
 /// rather than raised: callers distinguish a transport failure from a remote
 /// refusal, and the two want different handling.
-pub fn run(ssh: &Ssh, script: &str) -> Result<Output> {
+///
+/// `kind` names the call in the log. Every crossing of the machine boundary is
+/// traced with its destination, exit status and elapsed time - the script is
+/// never logged, because it carries the transcript.
+pub fn run(ssh: &Ssh, kind: &str, script: &str) -> Result<Output> {
+    let started = std::time::Instant::now();
     if script.len() > MAX_SCRIPT_BYTES {
         return Err(Error::Remote {
             label: ssh.destination.clone(),
@@ -173,9 +178,12 @@ pub fn run(ssh: &Ssh, script: &str) -> Result<Output> {
         let _ = std::fs::create_dir_all(parent);
     }
 
-    let mut child = command.spawn().map_err(|err| Error::Remote {
-        label: ssh.destination.clone(),
-        message: format!("cannot start {}: {err}", ssh.program),
+    let mut child = command.spawn().map_err(|err| {
+        tracing::warn!(host = %ssh.destination, kind, %err, "ssh would not start");
+        Error::Remote {
+            label: ssh.destination.clone(),
+            message: format!("cannot start {}: {err}", ssh.program),
+        }
     })?;
 
     let write = match child.stdin.take() {
@@ -195,6 +203,12 @@ pub fn run(ssh: &Ssh, script: &str) -> Result<Output> {
             terminate(pid);
             // Reap, so the child cannot outlive this call.
             let _ = rx.recv();
+            tracing::warn!(
+                host = %ssh.destination,
+                kind,
+                ms = started.elapsed().as_millis(),
+                "ssh timed out"
+            );
             return Err(Error::Remote {
                 label: ssh.destination.clone(),
                 message: format!("no answer within {}s", ssh.timeout.as_secs()),
@@ -210,11 +224,44 @@ pub fn run(ssh: &Ssh, script: &str) -> Result<Output> {
         message: err.to_string(),
     })?;
 
-    Ok(Output {
+    let result = Output {
         code: output.status.code().unwrap_or(SSH_TRANSPORT_FAILURE),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-    })
+    };
+    // Warm and cold differ by an order of magnitude, so the elapsed time is
+    // what tells a slow link from a connection that is not being shared.
+    tracing::debug!(
+        host = %ssh.destination,
+        kind,
+        code = result.code,
+        ms = started.elapsed().as_millis(),
+        shared = ssh.control.is_some(),
+        bytes = result.stdout.len(),
+        "remote call"
+    );
+    if result.code != 0 {
+        tracing::warn!(
+            host = %ssh.destination,
+            kind,
+            code = result.code,
+            transport = result.is_transport_failure(),
+            stderr = %tail(&result.stderr),
+            "remote call failed"
+        );
+    }
+    Ok(result)
+}
+
+/// The end of a stderr stream, which is where the reason is. Bounded: ssh can
+/// be verbose and a log line is not the place for all of it.
+fn tail(text: &str) -> String {
+    const MAX: usize = 300;
+    let trimmed = text.trim();
+    match trimmed.char_indices().nth_back(MAX) {
+        Some((cut, _)) => format!("…{}", &trimmed[cut..]),
+        None => trimmed.to_string(),
+    }
 }
 
 /// The remote command typed the text but did not submit it, because the pane
@@ -637,8 +684,19 @@ mod tests {
     }
 
     #[test]
+    fn a_log_line_carries_the_end_of_stderr_not_all_of_it() {
+        assert_eq!(tail("  boom  "), "boom");
+        let long = "x".repeat(1_000);
+        let cut = tail(&long);
+        assert!(cut.len() < long.len());
+        assert!(cut.starts_with('\u{2026}'));
+        // The reason ssh gives is at the end, so that is the end kept.
+        assert!(tail(&format!("{long}Permission denied")).ends_with("Permission denied"));
+    }
+
+    #[test]
     fn an_oversized_script_is_refused_before_it_is_sent() {
-        let err = run(&ssh(), &"x".repeat(MAX_SCRIPT_BYTES + 1)).unwrap_err();
+        let err = run(&ssh(), "test", &"x".repeat(MAX_SCRIPT_BYTES + 1)).unwrap_err();
         assert!(err.to_string().contains("over the limit"));
     }
 }
