@@ -217,6 +217,75 @@ pub fn run(ssh: &Ssh, script: &str) -> Result<Output> {
     })
 }
 
+/// The remote command typed the text but did not submit it, because the pane
+/// no longer hosts an agent.
+pub const AGENT_GONE: i32 = 3;
+
+/// A machine resolved far enough to deliver to. Only [`resolve`] builds one,
+/// so holding it is proof the session and binary were found.
+#[derive(Clone, Debug)]
+pub struct Target {
+    pub ssh: Ssh,
+    /// Absolute path to herdr on that machine.
+    pub herdr: String,
+    pub session: String,
+    /// What the sidebar calls this machine, for messages.
+    pub label: String,
+}
+
+/// Type the transcript into `pane`, submitting only when asked.
+///
+/// Verification rides in the same invocation as delivery: an agent that exits
+/// leaves its pane at a shell prompt, and submitting there would run the
+/// transcript as a command.
+pub fn deliver_script(target: &Target, pane: &str, text: &str, submit: bool) -> String {
+    let mut script = String::from("set -u\n");
+    script.push_str(&format!("H={}\n", sq(&target.herdr)));
+    script.push_str(&format!("S={}\n", sq(&target.session)));
+    script.push_str(&format!("P={}\n", sq(pane)));
+    script.push_str(&format!("T={}\n", sq(text)));
+    if submit {
+        script.push_str(
+            "if \"$H\" --session \"$S\" agent list \
+             | grep -q \"\\\"pane_id\\\"[[:space:]]*:[[:space:]]*\\\"$P\\\"\"; then\n\
+             \x20   exec \"$H\" --session \"$S\" agent prompt \"$P\" \"$T\"\n\
+             else\n\
+             \x20   \"$H\" --session \"$S\" pane send-text \"$P\" \"$T\" || exit 1\n\
+             \x20   exit 3\n\
+             fi\n",
+        );
+    } else {
+        script.push_str("exec \"$H\" --session \"$S\" pane send-text \"$P\" \"$T\"\n");
+    }
+    script
+}
+
+/// Set or clear the pane label that shows a dictation is running.
+///
+/// The user is looking at the remote pane, so the indicator has to live there.
+pub fn label_script(target: &Target, pane: &str, label: Option<(&str, Duration)>) -> String {
+    let mut script = String::from("set -u\n");
+    script.push_str(&format!("H={}\n", sq(&target.herdr)));
+    script.push_str(&format!("S={}\n", sq(&target.session)));
+    script.push_str(&format!("P={}\n", sq(pane)));
+    script.push_str(&format!("O={}\n", sq(crate::PLUGIN_ID)));
+    match label {
+        Some((text, ttl)) => {
+            script.push_str(&format!("L={}\n", sq(text)));
+            script.push_str(&format!("W={}\n", ttl.as_millis()));
+            script.push_str(
+                "exec \"$H\" --session \"$S\" pane report-metadata \"$P\" \
+                 --source \"$O\" --display-agent \"$L\" --ttl-ms \"$W\"\n",
+            );
+        }
+        None => script.push_str(
+            "exec \"$H\" --session \"$S\" pane report-metadata \"$P\" \
+             --source \"$O\" --clear-display-agent\n",
+        ),
+    }
+    script
+}
+
 /// What one machine reports about itself, from a single round trip.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Probe {

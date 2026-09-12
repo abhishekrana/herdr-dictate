@@ -22,6 +22,7 @@ pub mod server;
 pub mod session;
 pub mod settings;
 pub mod setup;
+pub mod sink;
 
 /// Namespace Herdr qualifies this plugin's actions and state directories with.
 pub const PLUGIN_ID: &str = "abhishekrana.dictate";
