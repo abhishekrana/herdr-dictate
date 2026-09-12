@@ -3,6 +3,36 @@
 Notable changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) spirit and versioned with
 [SemVer](https://semver.org/).
 
+## [0.2.0] - 2026-09-12
+
+### Added
+
+- Trace every crossing of the machine boundary (5a6e519)
+- Warm the ssh connection (caa93a3)
+- **doctor**: Checks for remote delivery (0755cd7)
+- Deliver to the selected machine (e6af83a)
+- **session**: The state file names the machine (2f23452)
+- **sink**: Local and remote delivery behind one enum (1189b41)
+- **remote**: Resolve a machine's target in one round trip (029be92)
+- **machine**: The machine the sidebar has selected (1638f6c)
+- **remote**: Ssh transport primitives (5a4399b)
+- **settings**: A [remote] section (f1cb57d)
+
+### Build
+
+- Require Herdr 0.9.0 (156ab70)
+
+### Changed
+
+- **indicator**: The sink sets the cadence (4a5f814)
+
+### Documentation
+
+- The new modules, and the remote settings in the README (e3798ef)
+- Remote delivery as built (042198b)
+- Close the open questions in the remote delivery design (e870cf1)
+- Design for delivering dictations to a saved SSH machine (14bac13)
+
 ## [0.1.1] - 2026-09-12
 
 ### Added
@@ -16,6 +46,7 @@ Notable changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) spi
 
 - Docs do not rebuild the container, and CI keeps its layers (3fb5545)
 - The secret scan reads the source, not the build output (98ced1b)
+- A profile for iteration, without the release optimisation (11e8bc7)
 - The container caches its dependency layer (e8d5299)
 
 ### Changed
