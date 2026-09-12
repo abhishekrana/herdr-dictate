@@ -9,7 +9,8 @@ use anyhow::{Context as _, Result};
 use clap::{Parser, Subcommand};
 use herdr_dictate::{
     capture, config, context::Context, doctor, engine, indicator::Indicator, ipc::Client, server,
-    session, session::Phase, session::Session, settings::Settings, setup, sink::Sink,
+    session, session::MachineRef, session::Phase, session::Session, settings::Settings, setup,
+    sink, sink::Delivery, sink::Sink,
 };
 
 #[derive(Parser)]
@@ -127,6 +128,17 @@ fn status() -> Result<()> {
     Ok(())
 }
 
+/// Long enough to read, short enough to expire on its own.
+const FLASH: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// A pane label is a few words wide, so say what broke and leave the detail to
+/// the log.
+fn warning(err: &herdr_dictate::Error) -> String {
+    let detail = err.to_string();
+    let detail = detail.split(':').next().unwrap_or("unreachable").trim();
+    format!("⚠ dictate: {detail} unreachable")
+}
+
 /// A dictation is two invocations: the first records, the second stops it.
 fn toggle(submit: bool) -> Result<ExitCode> {
     if let Some(running) = session::live()? {
@@ -136,13 +148,29 @@ fn toggle(submit: bool) -> Result<ExitCode> {
     }
 
     let client = Client::from_env().context("connecting to Herdr")?;
-    let pane = match Context::from_env()?.target_pane() {
+    let settings = Settings::load().context("reading the plugin config")?;
+    let local_pane = match Context::from_env()?.target_pane() {
         Some(pane) => pane,
         None => client
             .focused_pane()
             .context("asking Herdr which pane is focused")?,
     };
-    let settings = Settings::load().context("reading the plugin config")?;
+
+    // Resolving before the microphone opens is what makes an unreachable
+    // machine cost an error rather than a transcript. Nothing below may move
+    // past capture::record.
+    let latch = match sink::selected(&settings.remote) {
+        Ok(Some(latch)) => latch,
+        Ok(None) => sink::Latch::local(Sink::Local(client.clone()), local_pane),
+        Err(err) => {
+            // An error only reaches the plugin log, which nobody is reading
+            // when a keypress does nothing. Never a fallback: no transcript
+            // goes anywhere local.
+            let _ = client.set_pane_label(&local_pane, &warning(&err), FLASH);
+            return Err(err.into());
+        }
+    };
+    let (sink, pane) = (latch.sink, latch.pane);
 
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGTERM, std::sync::Arc::clone(&stop))
@@ -154,10 +182,13 @@ fn toggle(submit: bool) -> Result<ExitCode> {
         pane: pane.clone(),
         submit,
         phase: Phase::Recording,
-        machine: None,
+        machine: latch.machine.map(|m| MachineRef {
+            id: m.id,
+            label: m.label,
+        }),
     })?;
-    tracing::info!(%pane, submit, "recording");
-    let indicator = Indicator::show(Sink::Local(client.clone()), pane.clone(), "● dictating");
+    tracing::info!(%pane, submit, at = sink.describe(), "recording");
+    let indicator = Indicator::show(sink.clone(), pane.clone(), "● dictating");
     let recording = capture::record(settings.silence.into(), stop).context("recording")?;
 
     if recording.samples.is_empty() {
@@ -193,15 +224,26 @@ fn toggle(submit: bool) -> Result<ExitCode> {
 
     // strip_non_speech collapses whitespace, so a dictated newline cannot
     // submit the prompt; only --submit presses Enter.
-    client
-        .send_text(&pane, &text)
-        .with_context(|| format!("typing into {pane}"))?;
-    if submit {
-        client
-            .send_keys(&pane, &["enter"])
-            .with_context(|| format!("submitting in {pane}"))?;
+    let delivery = match sink.deliver(&pane, &text, submit) {
+        Ok(delivery) => delivery,
+        Err(err) => {
+            let kept = session::keep_undelivered(&text)?;
+            return Err(
+                anyhow::Error::new(err).context(format!("the words are in {}", kept.display()))
+            );
+        }
+    };
+    if delivery == Delivery::AgentGone {
+        tracing::warn!(%pane, "the agent had gone, so the words were left unsent");
     }
-    tracing::info!(%pane, chars = text.len(), stopped_by = ?recording.stopped_by, "delivered");
+    tracing::info!(
+        %pane,
+        at = sink.describe(),
+        chars = text.len(),
+        ?delivery,
+        stopped_by = ?recording.stopped_by,
+        "delivered"
+    );
 
     // Started after delivering, never before: two copies of the model loading
     // at once would slow down the dictation that is paying for it.
@@ -226,23 +268,30 @@ fn deliver(submit: bool) -> Result<()> {
     }
 
     let client = Client::from_env().context("connecting to Herdr")?;
-    let pane = match Context::from_env()?.target_pane() {
+    let settings = Settings::load().context("reading the plugin config")?;
+    let local_pane = match Context::from_env()?.target_pane() {
         Some(pane) => pane,
         None => client
             .focused_pane()
             .context("asking Herdr which pane is focused")?,
     };
+    let latch = match sink::selected(&settings.remote)? {
+        Some(latch) => latch,
+        None => sink::Latch::local(Sink::Local(client), local_pane),
+    };
 
     // A missing pane answers with pane_not_found rather than succeeding silently.
-    client
-        .send_text(&pane, text)
-        .with_context(|| format!("typing into {pane}"))?;
-    if submit {
-        client
-            .send_keys(&pane, &["enter"])
-            .with_context(|| format!("submitting in {pane}"))?;
-    }
-    tracing::info!(pane = %pane, chars = text.len(), submit, "delivered");
+    let delivery = latch
+        .sink
+        .deliver(&latch.pane, text, submit)
+        .with_context(|| format!("typing into {}", latch.pane))?;
+    tracing::info!(
+        pane = %latch.pane,
+        at = latch.sink.describe(),
+        chars = text.len(),
+        ?delivery,
+        "delivered"
+    );
     Ok(())
 }
 

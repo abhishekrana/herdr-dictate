@@ -44,6 +44,18 @@ pub struct Latch {
     pub machine: Option<Machine>,
 }
 
+impl Latch {
+    /// The local server, which needs no resolving.
+    pub fn local(sink: Sink, pane: String) -> Self {
+        Self {
+            sink,
+            pane,
+            occupant: Occupant::Other,
+            machine: None,
+        }
+    }
+}
+
 impl Sink {
     pub fn deliver(&self, pane: &str, text: &str, submit: bool) -> Result<Delivery> {
         match self {

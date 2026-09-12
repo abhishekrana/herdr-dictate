@@ -100,6 +100,21 @@ pub fn begin(session: &Session) -> Result<()> {
 }
 
 /// Write the state file whole, so a reader never sees half of one.
+/// Keep a transcript that could not be delivered, and say where.
+///
+/// Only a lost transcript is an error, so words the sink refused are written
+/// somewhere the user can read them rather than left in a log line.
+pub fn keep_undelivered(text: &str) -> Result<PathBuf> {
+    let path = state_path()?.with_file_name("undelivered.txt");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, text)?;
+    std::fs::rename(&tmp, &path)?;
+    Ok(path)
+}
+
 fn write_state(session: &Session) -> Result<()> {
     let path = state_path()?;
     if let Some(parent) = path.parent() {
