@@ -154,6 +154,7 @@ fn toggle(submit: bool) -> Result<ExitCode> {
         pane: pane.clone(),
         submit,
         phase: Phase::Recording,
+        machine: None,
     })?;
     tracing::info!(%pane, submit, "recording");
     let indicator = Indicator::show(Sink::Local(client.clone()), pane.clone(), "● dictating");

@@ -28,6 +28,20 @@ pub struct Session {
     /// Missing reads as recording.
     #[serde(default)]
     pub phase: Phase,
+    /// Absent for the local server, which is every file written before remote
+    /// delivery existed. A pane id only means something on one machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine: Option<MachineRef>,
+}
+
+/// Which machine a pane id belongs to.
+///
+/// Id and label only: nothing re-resolves from this file, and an ssh
+/// destination does not belong in it.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct MachineRef {
+    pub id: String,
+    pub label: String,
 }
 
 /// Where the recording state lives. Herdr names the directory for a plugin
@@ -192,6 +206,29 @@ mod tests {
             pane: "w1:p2".into(),
             submit: true,
             phase: Phase::Transcribing,
+            machine: None,
+        };
+        let text = serde_json::to_string(&session).unwrap();
+        assert_eq!(serde_json::from_str::<Session>(&text).unwrap(), session);
+    }
+
+    #[test]
+    fn a_file_from_before_remote_delivery_reads_as_local() {
+        let text = r#"{"pid":42,"pane":"w1:p2","submit":false,"phase":"recording"}"#;
+        assert_eq!(serde_json::from_str::<Session>(text).unwrap().machine, None);
+    }
+
+    #[test]
+    fn a_remote_session_round_trips_with_its_machine() {
+        let session = Session {
+            pid: 42,
+            pane: "w1:p2".into(),
+            submit: true,
+            phase: Phase::Recording,
+            machine: Some(MachineRef {
+                id: "7339".into(),
+                label: "desk".into(),
+            }),
         };
         let text = serde_json::to_string(&session).unwrap();
         assert_eq!(serde_json::from_str::<Session>(&text).unwrap(), session);
@@ -224,6 +261,7 @@ mod tests {
             pane: "w1:p2".into(),
             submit: false,
             phase: Phase::Recording,
+            machine: None,
         };
         std::fs::write(&path, serde_json::to_string(&session).unwrap()).unwrap();
 
