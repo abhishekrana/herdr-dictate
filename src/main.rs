@@ -9,7 +9,7 @@ use anyhow::{Context as _, Result};
 use clap::{Parser, Subcommand};
 use herdr_dictate::{
     capture, config, context::Context, doctor, engine, indicator::Indicator, ipc::Client, server,
-    session, session::Phase, session::Session, settings::Settings, setup,
+    session, session::Phase, session::Session, settings::Settings, setup, sink::Sink,
 };
 
 #[derive(Parser)]
@@ -156,7 +156,7 @@ fn toggle(submit: bool) -> Result<ExitCode> {
         phase: Phase::Recording,
     })?;
     tracing::info!(%pane, submit, "recording");
-    let indicator = Indicator::show(client.clone(), pane.clone(), "● dictating");
+    let indicator = Indicator::show(Sink::Local(client.clone()), pane.clone(), "● dictating");
     let recording = capture::record(settings.silence.into(), stop).context("recording")?;
 
     if recording.samples.is_empty() {
