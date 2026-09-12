@@ -43,7 +43,9 @@ jobs:
           context: .
           file: test/Dockerfile
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # The cache is an optimisation: a build that passed must not fail
+          # because the cache service rejected a layer.
+          cache-to: type=gha,mode=max,ignore-error=true
 
   secrets:
     runs-on: ubuntu-latest
