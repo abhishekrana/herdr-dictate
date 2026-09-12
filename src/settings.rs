@@ -18,9 +18,8 @@ pub struct Settings {
     pub status: Status,
 }
 
-/// The tab bar chip's glyphs. Herdr strips control sequences from a command
-/// entry, so only a glyph can carry state. Monochrome ones take the tab bar's
-/// own colour; a coloured one needs a font that draws it in colour.
+/// What the tab bar chip reads in each state, printed verbatim. A tab bar
+/// segment carries no style, so the chip cannot be coloured.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Status {
@@ -32,9 +31,9 @@ pub struct Status {
 impl Default for Status {
     fn default() -> Self {
         Self {
-            idle: "\u{25cb}".into(),
-            recording: "\u{25cf}".into(),
-            transcribing: "\u{25cc}".into(),
+            idle: "\u{25cb} dictate".into(),
+            recording: "\u{25cf} dictate".into(),
+            transcribing: "\u{25cc} dictate".into(),
         }
     }
 }
@@ -95,9 +94,8 @@ impl From<Silence> for SilenceConfig {
     }
 }
 
-/// Herdr names the config directory for a plugin process. The chip runs as a
-/// plain command with no such environment, so the fallback resolves the
-/// directory Herdr would have given.
+/// Herdr sets the config directory only for a plugin process; the chip runs as
+/// a plain command, so the fallback is the path Herdr would have given.
 pub fn path() -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os("HERDR_PLUGIN_CONFIG_DIR").filter(|v| !v.is_empty()) {
         return Some(PathBuf::from(dir).join("config.toml"));
@@ -142,17 +140,17 @@ mod tests {
     }
 
     #[test]
-    fn status_glyphs_default_to_monochrome() {
+    fn status_text_defaults_to_a_monochrome_glyph_and_the_label() {
         let settings: Settings = toml::from_str("").unwrap();
-        assert_eq!(settings.status.idle, "\u{25cb}");
-        assert_eq!(settings.status.recording, "\u{25cf}");
-        assert_eq!(settings.status.transcribing, "\u{25cc}");
+        assert_eq!(settings.status.idle, "\u{25cb} dictate");
+        assert_eq!(settings.status.recording, "\u{25cf} dictate");
+        assert_eq!(settings.status.transcribing, "\u{25cc} dictate");
     }
 
     #[test]
-    fn one_status_glyph_leaves_the_others_alone() {
-        let settings: Settings = toml::from_str("[status]\nrecording = \"\u{1f7e2}\"\n").unwrap();
-        assert_eq!(settings.status.recording, "\u{1f7e2}");
+    fn one_status_state_leaves_the_others_alone() {
+        let settings: Settings = toml::from_str("[status]\nrecording = \"rec\"\n").unwrap();
+        assert_eq!(settings.status.recording, "rec");
         assert_eq!(settings.status.idle, Status::default().idle);
         assert_eq!(settings.status.transcribing, Status::default().transcribing);
     }

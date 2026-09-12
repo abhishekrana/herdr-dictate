@@ -115,17 +115,15 @@ fn run() -> Result<ExitCode> {
     }
 }
 
-/// One chip for the tab bar: the glyph carries the state, the label holds the
-/// width. An unreadable config falls back to the default glyphs, so the chip
-/// still draws.
+/// One chip for the tab bar; an unreadable config falls back to the defaults.
 fn status() -> Result<()> {
-    let glyphs = Settings::load().unwrap_or_default().status;
-    let glyph = match session::peek().context("reading the dictation state")? {
-        Some(session) if session.phase == Phase::Transcribing => glyphs.transcribing,
-        Some(_) => glyphs.recording,
-        None => glyphs.idle,
+    let text = Settings::load().unwrap_or_default().status;
+    let chip = match session::peek().context("reading the dictation state")? {
+        Some(session) if session.phase == Phase::Transcribing => text.transcribing,
+        Some(_) => text.recording,
+        None => text.idle,
     };
-    println!("{glyph} dictate");
+    println!("{chip}");
     Ok(())
 }
 

@@ -100,16 +100,14 @@ tab_bar_right = [
 The plugin is not on `PATH`, so the entry names the binary by its full path.
 `doctor` prints the line to paste, with the path filled in.
 
-`○` idle, `●` recording, `◌` while the model runs. Herdr strips control
-sequences from a command entry, so only a glyph can carry state. The defaults
-are monochrome and take the tab bar's own colour, so they follow any theme.
-`[status]` swaps them. A coloured glyph carries its colour in the font, so how
-one looks is the terminal's font choice, not the plugin's.
+`○` idle, `●` recording, `◌` while the model runs. `[status]` sets what each
+state reads, printed verbatim; use one display width across all three, or the
+chip shifts as it changes.
 
-Use one display width across all three states, or the chip shifts as it changes.
-
-Herdr has no clickable surface a plugin can add to, so the chip reports state
-and the key does the work.
+A tab bar segment carries no style and Herdr strips control sequences from a
+command entry, so the chip takes the tab bar's own colour. A glyph that looks
+coloured carries its colour in the font, which makes it the terminal's choice;
+the defaults are monochrome and need no particular font.
 
 `toggle`, `toggle-send` and `doctor` are Herdr actions once installed:
 
@@ -145,10 +143,10 @@ max_secs = 120.0
 enabled = true
 idle_secs = 300              # 0 keeps the model resident forever
 
-[status]                     # the tab bar chip's glyphs
-idle = "○"
-recording = "●"
-transcribing = "◌"
+[status]                     # what the tab bar chip reads, printed verbatim
+idle = "○ dictate"
+recording = "● dictate"
+transcribing = "◌ dictate"
 ```
 
 `name`, `path` and `url` are alternatives; set exactly one. Models download on first use and are verified against a
@@ -164,9 +162,9 @@ pinned SHA-256.
 
 Within a size class the quantised `q8_0` build is faster for half the download, with no accuracy difference observed.
 
-One Vulkan build drives AMD, Intel and NVIDIA, because every vendor's driver ships a Vulkan ICD, and it still runs on
-the CPU when no GPU is present. `cuda`, `metal` and `hipblas` exist for their own hardware but each needs its own SDK
-and none is selected automatically. They are mutually exclusive - never build with `--all-features`.
+One Vulkan build drives AMD, Intel and NVIDIA, and still runs on the CPU when no GPU is present. `cuda`, `metal` and
+`hipblas` each need their own SDK and are never selected automatically. All are mutually exclusive - never build with
+`--all-features`.
 
 ## Troubleshooting
 
@@ -192,8 +190,8 @@ cargo check                      # logic only, no codegen
 ```
 
 A clean local run means a clean CI run: lints use the toolchain pinned in `scripts/versions.env`, the same one CI
-installs. Tools the gate cannot find are reported as skipped. Release steps are in
-`CLAUDE.md`. Release binaries are built by CI and carry a provenance attestation, verifiable with
+installs. Tools the gate cannot find are reported as skipped. Release steps are in `CLAUDE.md`; release binaries are
+built by CI with a provenance attestation, verifiable with
 `gh attestation verify <archive> --repo abhishekrana/herdr-dictate`.
 
 ## License
