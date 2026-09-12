@@ -3,8 +3,9 @@ import os, pickle, shutil, subprocess, sys, tempfile
 from PIL import Image, ImageDraw, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FRAMES = os.environ.get("DEMO_FRAMES", os.path.join(HERE, "frames.pkl"))
-OUT = os.environ.get("DEMO_GIF", os.path.join(HERE, "demo.gif"))
+REPO = os.path.dirname(os.path.dirname(HERE))
+FRAMES = os.environ.get("DEMO_FRAMES", "/tmp/herdr-dictate-demo-frames.pkl")
+OUT = os.environ.get("DEMO_GIF", os.path.join(REPO, "assets", "demo.gif"))
 FPS = 10
 MAX_HOLD = 7          # frames a static screen may occupy, so waits compress
 SIZE = 13

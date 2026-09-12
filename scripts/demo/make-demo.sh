@@ -5,8 +5,8 @@
 # a temporary virtual microphone, lets the plugin dictate it into the agent's
 # pane, and renders what the terminal drew. Everything it creates is removed.
 #
-#   ./assets/make-demo.sh
-#   DEMO_LINE="Rename the parser module." ./assets/make-demo.sh
+#   ./scripts/demo/make-demo.sh
+#   DEMO_LINE="Rename the parser module." ./scripts/demo/make-demo.sh
 set -eu
 
 cd "$(dirname "$0")"
@@ -49,5 +49,4 @@ fi
 ./say.py "$LINE" prompt.wav
 "$VENV/bin/python" record.py
 "$VENV/bin/python" render.py
-rm -f frames.pkl
-echo "wrote $(pwd)/demo.gif"
+rm -f /tmp/herdr-dictate-demo-frames.pkl

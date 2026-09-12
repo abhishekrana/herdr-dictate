@@ -21,7 +21,7 @@ transcript is typed where you were looking. Audio never leaves the machine.
 
 <div align="center"><sub>A real session: the hotkey starts a dictation, the chip turns
 <code>●</code>, the transcript is typed into the agent's pane and submitted. Rebuild with
-<code>assets/record.py</code> then <code>assets/render.py</code>.</sub></div>
+<code>scripts/demo/make-demo.sh</code>.</sub></div>
 
 whisper.cpp is compiled in, the model is downloaded and verified by the plugin, and the model server is this same
 binary. There is no sidecar to install and nothing to run yourself.

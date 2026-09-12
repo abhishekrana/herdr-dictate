@@ -161,7 +161,7 @@ def main():
         if module.isdigit():
             subprocess.run(["pactl", "unload-module", module], capture_output=True)
     audit(frames)
-    with open(os.environ.get("DEMO_FRAMES", os.path.join(HERE, "frames.pkl")), "wb") as fh:
+    with open(os.environ.get("DEMO_FRAMES", "/tmp/herdr-dictate-demo-frames.pkl"), "wb") as fh:
         pickle.dump(frames, fh)
     print("frames:", len(frames))
 
