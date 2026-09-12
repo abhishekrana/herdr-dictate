@@ -6,6 +6,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 FRAMES = os.environ.get("DEMO_FRAMES", "/tmp/herdr-dictate-demo-frames.pkl")
 OUT = os.environ.get("DEMO_GIF", os.path.join(REPO, "assets", "demo.gif"))
+CARD = os.environ.get("DEMO_CARD", os.path.join(REPO, ".github", "social-preview.png"))
 FPS = 10
 MAX_HOLD = 7          # frames a static screen may occupy, so waits compress
 SIZE = int(os.environ.get("DEMO_FONT_SIZE", 26))   # 2x, so HiDPI screens get real pixels
@@ -85,6 +86,17 @@ def select(frames):
     return out
 
 
+def card(frame):
+    """GitHub renders a social preview at 1280x640; anything else is cropped."""
+    shot = Image.open(frame).convert("RGB")
+    w, h = shot.size
+    out = Image.new("RGB", (1280, 640), BG)
+    shot = shot.resize((1280, round(h * 1280 / w)), Image.LANCZOS)
+    out.paste(shot, (0, max(0, (640 - shot.size[1]) // 2)))
+    out.save(CARD)
+    print(CARD)
+
+
 def main():
     frames = pickle.load(open(FRAMES, "rb"))
     picked = select(frames)
@@ -119,6 +131,7 @@ def main():
         run = lambda *a: subprocess.run(a, check=True, capture_output=True)
         run("ffmpeg", "-y", "-i", f"{tmp}/f%04d.png",
             "-vf", f"palettegen=max_colors={COLOURS}:stats_mode=full", pal)
+        card(f"{tmp}/f{int(len(picked) * 0.65):04d}.png")
         out = OUT
         run("ffmpeg", "-y", "-framerate", str(FPS), "-i", f"{tmp}/f%04d.png", "-i", pal,
             "-lavfi", "paletteuse=dither=none", "-loop", "0", out)

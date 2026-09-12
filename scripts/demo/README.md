@@ -1,6 +1,6 @@
 # demo
 
-Rebuilds `assets/demo.gif`, a recording of a real session: the plugin action fires, the chip
+Rebuilds `assets/demo.gif` and `.github/social-preview.png` from a recording of a real session: the plugin action fires, the chip
 turns `●`, whisper transcribes, and the transcript is typed into a Claude Code pane and
 submitted.
 
@@ -14,7 +14,7 @@ DEMO_LINE="Rename the parser module." ./scripts/demo/make-demo.sh
 | `make-demo.sh` | the entry point: sets up, records, renders, cleans up            |
 | `say.py`       | speaks the instruction and captures it as the demo's microphone  |
 | `record.py`    | runs Herdr in a pty and drives the dictation, capturing frames   |
-| `render.py`    | turns captured frames into the GIF                               |
+| `render.py`    | turns captured frames into the GIF and the social preview card   |
 | `prompt.wav`   | the last spoken instruction, so a rebuild needs no speech engine |
 
 Needs `uv`, `herdr`, `claude`, `ffmpeg`, `fontconfig`, `git`, and PulseAudio or PipeWire with
