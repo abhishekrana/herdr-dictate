@@ -3,6 +3,48 @@
 Notable changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) spirit and versioned with
 [SemVer](https://semver.org/).
 
+## [0.1.1] - 2026-09-12
+
+### Added
+
+- The tab bar chip's glyphs come from config (2f45592)
+- The tab bar chip turns green while recording (d58a4b9)
+- Deploy the working tree, and doctor reports which build Herdr runs (4be933a)
+- A dictation chip for the tab bar, and a global hotkey (7fc6340)
+
+### Build
+
+- Docs do not rebuild the container, and CI keeps its layers (3fb5545)
+- The secret scan reads the source, not the build output (98ced1b)
+- The container caches its dependency layer (e8d5299)
+
+### Changed
+
+- Assets holds the demo, scripts/demo builds it (3cdbcb5)
+- The chip config holds whole strings (20b59c6)
+
+### Documentation
+
+- Generate the social preview card with the demo (8a46bd1)
+- Render the demo at 2x, and keep the frames (3e0fb42)
+- Cut the README to what a new reader needs (41feade)
+- A recorded demo of the whole workflow (4ec551b)
+- Restructure the README and add compatibility badges (35f5b04)
+- Glyph appearance is the terminal's font choice (379902f)
+- What deploy means for a linked plugin (b1f171f)
+- The test loop, cheapest first (c90b63c)
+- Trim the comments to what the code does (2a50bce)
+- A bare modifier binds as a global hotkey (c575f1d)
+
+### Fixed
+
+- The gate lints the demo scripts too (43ff61b)
+- The chip reads the state file the recorder writes (440b9d1)
+
+### Performance
+
+- Drop LTO, which the C++ hot path never sees (78fe8a2)
+
 ## [0.1.0] - 2026-09-11
 
 ### Added
