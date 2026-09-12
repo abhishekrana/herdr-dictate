@@ -2,8 +2,8 @@
 
 # herdr-dictate
 
-**Speak into any pane.** A [Herdr](https://herdr.dev) plugin for local speech-to-text: press a key, talk, and the
-transcript is typed where you were looking. Audio never leaves the machine.
+**Speak into any pane.** Local speech-to-text for [Herdr](https://herdr.dev): press a key, talk, and
+the transcript is typed where you were looking.
 
 [![ci](https://github.com/abhishekrana/herdr-dictate/actions/workflows/ci.yml/badge.svg)](https://github.com/abhishekrana/herdr-dictate/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/abhishekrana/herdr-dictate)](https://github.com/abhishekrana/herdr-dictate/releases)
@@ -12,22 +12,16 @@ transcript is typed where you were looking. Audio never leaves the machine.
 ![rust](https://img.shields.io/badge/rust-%E2%89%A5%201.88-orange)
 ![platform](https://img.shields.io/badge/platform-linux-lightgrey)
 
-[Install](#install) · [Quick start](#quick-start) · [Actions](#actions-and-panes) ·
-[Configuration](#configuration) · [Troubleshooting](#troubleshooting) · [Development](#development)
+[Install](#install) · [Usage](#usage) · [Configuration](#configuration) ·
+[Troubleshooting](#troubleshooting)
 
 </div>
 
 ![talking to Claude Code through Herdr](assets/demo.gif)
 
-<div align="center"><sub>A real session: the hotkey starts a dictation, the chip turns
-<code>●</code>, the transcript is typed into the agent's pane and submitted. Rebuild with
-<code>scripts/demo/make-demo.sh</code>.</sub></div>
-
-whisper.cpp is compiled in, the model is downloaded and verified by the plugin, and the model server is this same
-binary. There is no sidecar to install and nothing to run yourself.
-
-> [!NOTE]
-> Linux only - macOS needs a resampler.
+Audio never leaves the machine. whisper.cpp is compiled in, the model is downloaded and verified by
+the plugin, and the model server is this same binary - there is no sidecar to install and nothing to
+run yourself. A GPU is used automatically when one is present.
 
 ## Install
 
@@ -36,138 +30,46 @@ herdr plugin install abhishekrana/herdr-dictate
 herdr plugin pane open --plugin abhishekrana.dictate --entrypoint setup
 ```
 
-Installing picks the fastest option this machine can run, in order: the released Vulkan binary, else a source build
-with Vulkan when `libvulkan-dev` and `glslc` are present, else a plain CPU build. Compiling takes a while; fetching
-does not.
+Herdr plugins cannot register their own keys, so `setup` offers to add them: `prefix+v` dictates,
+`prefix+shift+v` dictates and submits. It backs up `config.toml` and appends rather than rewriting,
+so comments survive.
 
-The binary is not placed on `PATH`, so `setup` is opened as a plugin pane. Herdr plugins cannot register their own
-keys, so `setup` adds them: `prefix+v` toggles, `prefix+shift+v` toggles and submits. It backs up `config.toml`,
-appends rather than rewriting so comments survive, refuses a file that is not valid TOML, and matches by action so a
-key you moved is not offered again.
+Installing downloads a prebuilt binary when one fits this machine, and compiles otherwise. To
+compile, run `scripts/install-deps.sh` first (Debian and Ubuntu) for the build tools and the audio
+and GPU headers.
 
-For a local checkout:
+## Usage
 
-```sh
-scripts/install-deps.sh          # build deps, Debian and Ubuntu
-cargo build --release --features vulkan
-herdr plugin link .
-```
+Press the key, speak, then press it again. Or just stop talking - a couple of seconds of silence
+ends the recording on its own. The first dictation downloads the model, so it takes noticeably
+longer than every one after it.
 
-## Quick start
+| action        | what it does                                       |
+| ------------- | -------------------------------------------------- |
+| `toggle`      | start recording, or stop and insert the transcript  |
+| `toggle-send` | the same, then press Enter once the transcript lands |
+| `doctor`      | check every dependency and say what to do about it  |
 
-Press the key, speak, press it again - or stop talking and let trailing silence end it. The pane shows `● dictating`,
-then `◌ transcribing`. The transcript is inserted, not submitted.
-
-> [!TIP]
-> The first dictation downloads the model, so it takes noticeably longer than every one after it.
-
-## Actions and panes
-
-| id            | context          | what it does                                       |
-| ------------- | ---------------- | -------------------------------------------------- |
-| `toggle`      | workspace, pane  | Start recording, or stop and insert the transcript  |
-| `toggle-send` | workspace, pane  | Same, then press Enter once the transcript lands    |
-| `doctor`      | workspace        | Report the wiring this plugin depends on            |
-| `setup`       | pane entrypoint  | Show the keybindings, and offer to write them       |
-
-```sh
-herdr plugin action invoke abhishekrana.dictate.doctor
-```
-
-<details>
-<summary>The binary's own interface, for running it from a clone</summary>
-
-| command                    | what it does                                           |
-| -------------------------- | ------------------------------------------------------ |
-| `toggle [--submit]`        | start recording, or stop and insert the transcript     |
-| `setup [--apply\|--print]` | write the keybindings                                  |
-| `doctor`                   | check every dependency; non-zero exit on failure       |
-| `serve` / `serve-stop`     | the model server, started automatically                |
-| `transcribe FILE`          | transcribe a 16 kHz mono WAV                           |
-| `record --out FILE`        | record a WAV, to check the microphone                  |
-| `deliver [--submit]`       | type a transcript read from stdin into the target pane |
-| `status`                   | print one chip for the Herdr tab bar                   |
-
-Exit codes: `0` success, `1` failure, `2` bad arguments.
-
-</details>
-
-## Features
-
-- **Nothing leaves the machine** - whisper.cpp is compiled in and the model runs locally. No account, no network at
-  dictation time, no audio anywhere but RAM.
-- **One binary, no sidecar** - the model server is this same executable, started automatically after the first
-  dictation and idling out on its own.
-- **The GPU when you have one** - a single Vulkan build drives AMD, Intel and NVIDIA, and still runs on the CPU when
-  no GPU is present.
-- **Words land where you were looking** - the target pane is latched when recording starts and never recomputed, so
-  moving focus mid-sentence cannot misroute the transcript.
-- **Stops when you stop** - trailing silence ends a recording, or press the key again.
-- **Triggered from anywhere** - any desktop shortcut can start a dictation, whether or not Herdr has focus.
-- **Visible in every workspace** - one tab bar chip reports idle, recording and transcribing.
-- **`doctor` explains itself** - one named check per thing that can break, each with the remedy.
-
-## How it works
-
-```mermaid
-flowchart LR
-    K["key · hotkey · action"] --> T{"already<br/>recording?"}
-    T -- no --> R["latch focused pane<br/>record 16 kHz mono"]
-    T -- yes --> S["stop"]
-    R -- "trailing silence" --> S
-    S --> W{"model server<br/>up?"}
-    W -- yes --> Q["transcribe in the server"]
-    W -- no --> P["transcribe in process"]
-    Q --> D["insert into the latched pane"]
-    P --> D
-    D --> N["spawn the server<br/>for next time"]
-```
-
-A dictation is two invocations of the same command. The first writes a state file and records; the second finds it and
-signals the first. Nothing is a daemon except the optional model server, which is spawned only after the transcript is
-delivered, so two copies of the model never load at once.
-
-## Global hotkey
-
-Dictation starts from anything that can run a command, whether or not Herdr has focus:
+Any desktop shortcut can start a dictation, whether or not Herdr has focus - bind this command:
 
 ```sh
 herdr plugin action invoke abhishekrana.dictate.toggle-send
 ```
 
-Binding it is the desktop's job, so the plugin writes nothing outside Herdr.
+On GNOME that is Settings → Keyboard → Custom Shortcuts. A single key works, a bare modifier
+included. Name `herdr` by its full path: a shortcut does not run with a login shell's `PATH`.
 
-| desktop        | where to put that command                     |
-| -------------- | --------------------------------------------- |
-| GNOME          | Settings → Keyboard → Custom Shortcuts         |
-| KDE            | System Settings → Shortcuts → Custom Shortcuts |
-| sway, Hyprland | `bindsym $mod+d exec …` in the config          |
-| macOS          | skhd, Karabiner-Elements or a Shortcuts service |
+### Status chip
 
-A single key works, a bare modifier included - right Alt (`Alt_R`) binds cleanly on GNOME. Name `herdr` by its full
-path: a shortcut does not run with a login shell's `PATH`.
-
-## Status chip
-
-`status` prints one chip for Herdr's tab bar, so the state is visible in every workspace:
+`status` prints one chip for Herdr's tab bar, so the state shows in every workspace - `○` idle, `●`
+recording, `◌` while the model runs. `doctor` prints the line to paste:
 
 ```toml
-# ~/.config/herdr/config.toml, under the existing [ui] section
+# ~/.config/herdr/config.toml, under [ui]
 tab_bar_right = [
   { type = "command", command = "/path/to/herdr-dictate status", interval_seconds = 1 },
 ]
 ```
-
-The plugin is not on `PATH`, so the entry names the binary by its full path. `doctor` prints the line to paste, with
-the path filled in.
-
-`○` idle, `●` recording, `◌` while the model runs. `[status]` sets what each state reads, printed verbatim; use one
-display width across all three, or the chip shifts as it changes.
-
-> [!NOTE]
-> A tab bar segment carries no style and Herdr strips control sequences from a command entry, so the chip takes the
-> tab bar's own colour. A glyph that looks coloured carries its colour in the font, which makes it the terminal's
-> choice; the defaults are monochrome and need no particular font.
 
 ## Configuration
 
@@ -178,9 +80,13 @@ Optional, at `config.toml` in `herdr plugin config-dir abhishekrana.dictate`:
 name = "small.en-q8_0"       # tiny.en, base.en, base.en-q8_0, small.en-q8_0, small.en
 
 [silence]
-threshold = 300.0            # rms above which a frame counts as speech
-trailing_secs = 2.0          # silence that ends a recording; 0 disables auto-stop
+threshold = 300.0            # how loud audio must be to count as speech
+trailing_secs = 2.0          # seconds of silence that end a recording; 0 to never stop on its own
 ```
+
+Models download on first use and are checked against a known hash. The default, `small.en-q8_0`, is
+252 MB; `tiny.en` is 74 MB and noticeably worse. A `q8_0` model is a compressed build of the same
+size class - half the download, faster, and no accuracy difference observed.
 
 <details>
 <summary>Every setting, with defaults</summary>
@@ -200,7 +106,7 @@ name = "small.en-q8_0"
 [silence]
 threshold = 300.0
 trailing_secs = 2.0
-max_secs = 120.0
+max_secs = 120.0            # a recording never runs longer than this
 
 [server]
 enabled = true
@@ -212,39 +118,9 @@ recording = "● dictate"
 transcribing = "◌ dictate"
 ```
 
-`name`, `path` and `url` are alternatives; set exactly one. Models download on first use and are verified against a
-pinned SHA-256.
+`name`, `path` and `url` are alternatives; set exactly one.
 
 </details>
-
-| model         | download | accuracy       |
-| ------------- | -------- | -------------- |
-| tiny.en       | 74 MB    | poor           |
-| base.en-q8_0  | 77 MB    | fair           |
-| base.en       | 141 MB   | fair           |
-| small.en-q8_0 | 252 MB   | good (default) |
-| small.en      | 465 MB   | good           |
-
-Within a size class the quantised `q8_0` build is faster for half the download, with no accuracy difference observed.
-
-## Requirements & limitations
-
-| dependency                               | needed for                                        |
-| ---------------------------------------- | ------------------------------------------------- |
-| Rust 1.88+                               | building                                          |
-| `build-essential` `cmake` `libclang-dev` | compiling whisper.cpp                             |
-| `libasound2-dev` `pkg-config`            | microphone capture (ALSA)                         |
-| `libvulkan-dev` `glslc`                  | GPU acceleration; used automatically when present |
-
-`scripts/install-deps.sh` installs all of them on Debian and Ubuntu. At runtime only `libasound2`, `libvulkan1` and a
-GPU driver are needed.
-
-- **Linux only.** macOS needs a resampler before the capture path works there.
-- **Auto-stop depends on a quiet room.** Trailing silence ends a recording by comparing RMS against
-  `silence.threshold`; a room noisier than the threshold never falls silent, so raise it. `doctor` measures the room
-  and says so.
-- `cuda`, `metal` and `hipblas` exist for their own hardware but each needs its own SDK and none is selected
-  automatically. All are mutually exclusive - never build with `--all-features`.
 
 ## Troubleshooting
 
@@ -253,25 +129,13 @@ herdr plugin action invoke abhishekrana.dictate.doctor
 herdr plugin log list --plugin abhishekrana.dictate
 ```
 
-`doctor` names each dependency, what it found and what to do about it. It briefly opens the microphone to compare the
-room against the speech threshold.
+`doctor` names each dependency, what it found and what to do about it. It listens briefly to
+compare the room against the speech threshold: if it reports a room louder than `threshold`, the
+recording never hears silence, so it will not stop on its own until you raise that number.
 
-`HERDR_DICTATE_LOG=debug` increases logging. A failed delivery reports Herdr's own error code, so `pane_not_found`
-reads as exactly that.
+`HERDR_DICTATE_LOG=debug` increases logging.
 
-## Development
-
-```sh
-scripts/install-dev-tools.sh     # cargo-deny, git-cliff, the MSRV toolchain
-scripts/check.sh                 # the gate CI runs; SKIP_DOCKER=1 skips the container
-
-cargo check                      # logic only, no codegen
-```
-
-A clean local run means a clean CI run: lints use the toolchain pinned in `scripts/versions.env`, the same one CI
-installs. Tools the gate cannot find are reported as skipped. Release steps are in `CLAUDE.md`; release binaries are
-built by CI with a provenance attestation, verifiable with
-`gh attestation verify <archive> --repo abhishekrana/herdr-dictate`.
+**Linux only** - the audio capture path does not handle macOS sample rates yet.
 
 ## License
 
