@@ -10,6 +10,8 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
 
+use serde::Deserialize;
+
 use crate::{Error, PLUGIN_ID, Result};
 
 /// `sun_path` bounds an ssh ControlPath; ssh refuses one at or above this.
@@ -215,6 +217,161 @@ pub fn run(ssh: &Ssh, script: &str) -> Result<Output> {
     })
 }
 
+/// What one machine reports about itself, from a single round trip.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Probe {
+    /// The binary that answered, so `doctor` can tell the user what to pin.
+    pub herdr: String,
+    pub focused_pane: String,
+    pub agents: Vec<Agent>,
+}
+
+/// One entry of the remote `agent list`. Detected agents carry no name, so the
+/// pane is the only handle.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct Agent {
+    pub pane_id: String,
+    #[serde(default)]
+    pub agent: String,
+    #[serde(default)]
+    pub agent_status: String,
+}
+
+/// What is living in the pane a transcript is about to go to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Occupant {
+    Agent,
+    Other,
+}
+
+impl Probe {
+    pub fn occupant(&self) -> Occupant {
+        if self.agents.iter().any(|a| a.pane_id == self.focused_pane) {
+            Occupant::Agent
+        } else {
+            Occupant::Other
+        }
+    }
+}
+
+/// Framing for one invocation, unforgeable by anything the remote prints.
+pub fn nonce() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    format!("__hd{:x}{:x}__", std::process::id(), nanos)
+}
+
+/// Everything the latch needs, in one invocation.
+///
+/// Three separate calls measured 1550ms cold against 76ms batched and warm,
+/// because each ssh exec channel costs round trips that the remote work does
+/// not. Finding the binary rides along rather than costing a call of its own.
+pub fn resolve_script(session: &str, configured_herdr: &str, nonce: &str) -> String {
+    let mut script = String::from("set -u\n");
+    script.push_str(&format!("M={}\n", sq(nonce)));
+    script.push_str(&format!("C={}\n", sq(configured_herdr)));
+    script.push_str(HERDR_LOOKUP);
+    script.push_str("printf '%s herdr %s\\n' \"$M\" \"$H\"\n");
+    script.push_str(&format!("S={}\n", sq(session)));
+    script.push_str("printf '%s snapshot\\n' \"$M\"\n");
+    script.push_str("\"$H\" --session \"$S\" api snapshot || exit 91\n");
+    script.push_str("printf '%s agents\\n' \"$M\"\n");
+    script.push_str("\"$H\" --session \"$S\" agent list || exit 91\n");
+    script.push_str("printf '%s end\\n' \"$M\"\n");
+    script
+}
+
+/// Herdr commonly lives under the user's home, which a non-interactive shell
+/// does not have on PATH, so a bare `herdr` fails where an interactive one
+/// works.
+const HERDR_LOOKUP: &str = r#"H=''
+for c in "$C" "$HOME/.local/bin/herdr" "$HOME/.cargo/bin/herdr" /usr/local/bin/herdr; do
+    if [ -n "$c" ] && [ -x "$c" ]; then H="$c"; break; fi
+done
+[ -z "$H" ] && H="$(command -v herdr 2>/dev/null || true)"
+if [ -z "$H" ]; then printf '%s herdr-missing\n' "$M"; exit 90; fi
+"#;
+
+/// Read back a [`Probe`] from framed output.
+///
+/// Everything before the first sentinel is discarded: a login shell's rc files
+/// print to stdout on a non-interactive ssh, and that is the usual way a
+/// remote-exec parser breaks.
+pub fn parse_probe(stdout: &str, nonce: &str) -> Result<Probe> {
+    let mut herdr = String::new();
+    let mut sections: Vec<(String, String)> = Vec::new();
+    let mut current: Option<(String, String)> = None;
+    let mut ended = false;
+
+    for line in stdout.lines() {
+        let Some(rest) = line.strip_prefix(nonce) else {
+            if let Some((_, body)) = current.as_mut() {
+                body.push_str(line);
+                body.push('\n');
+            }
+            continue;
+        };
+        if let Some(section) = current.take() {
+            sections.push(section);
+        }
+        let mut parts = rest.trim().splitn(2, ' ');
+        match (parts.next().unwrap_or(""), parts.next()) {
+            ("herdr", Some(path)) => herdr = path.trim().to_string(),
+            ("herdr-missing", _) => {
+                return Err(Error::Remote {
+                    label: "remote".into(),
+                    message: "no herdr binary found; set [remote.machines] herdr".into(),
+                });
+            }
+            ("end", _) => ended = true,
+            (kind, _) => current = Some((kind.to_string(), String::new())),
+        }
+    }
+    if let Some(section) = current.take() {
+        sections.push(section);
+    }
+    if !ended {
+        return Err(Error::Remote {
+            label: "remote".into(),
+            message: "output ended early; nothing was latched".into(),
+        });
+    }
+
+    let focused_pane = body(&sections, "snapshot")
+        .and_then(|b| serde_json::from_str::<serde_json::Value>(b).ok())
+        .and_then(|v| {
+            [
+                "/result/snapshot/focused_pane_id",
+                "/result/focused_pane_id",
+            ]
+            .iter()
+            .find_map(|p| v.pointer(p).and_then(|f| f.as_str()).map(String::from))
+        })
+        .ok_or(Error::NoFocusedPane)?;
+
+    let agents = body(&sections, "agents")
+        .and_then(|b| serde_json::from_str::<serde_json::Value>(b).ok())
+        .and_then(|v| v.pointer("/result/agents").cloned())
+        .and_then(|a| serde_json::from_value(a).ok())
+        .unwrap_or_default();
+
+    Ok(Probe {
+        herdr,
+        focused_pane,
+        agents,
+    })
+}
+
+fn body<'a>(sections: &'a [(String, String)], kind: &str) -> Option<&'a str> {
+    sections
+        .iter()
+        .find(|(k, _)| k == kind)
+        .map(|(_, b)| b.trim())
+        .filter(|b| !b.is_empty())
+}
+
 fn terminate(pid: u32) {
     let Ok(pid) = i32::try_from(pid) else {
         return;
@@ -324,6 +481,90 @@ mod tests {
         let mut ssh = ssh();
         ssh.control_persist = Duration::from_secs(0);
         assert!(ssh_args(&ssh).iter().any(|a| a == "ControlPersist=no"));
+    }
+
+    const N: &str = "__hdtest__";
+
+    fn probe_output(snapshot: &str, agents: &str) -> String {
+        format!(
+            "{N} herdr /home/u/.local/bin/herdr\n\
+             {N} snapshot\n{snapshot}\n\
+             {N} agents\n{agents}\n\
+             {N} end\n"
+        )
+    }
+
+    const SNAPSHOT: &str = r#"{"id":"cli:api:snapshot","result":{"snapshot":
+        {"focused_pane_id":"w1:p3","agents":[]}}}"#;
+    const AGENTS: &str = r#"{"id":"cli:agent:list","result":{"agents":
+        [{"pane_id":"w1:p3","agent":"claude","agent_status":"idle"}]}}"#;
+
+    #[test]
+    fn a_probe_reads_back_the_pane_and_its_occupant() {
+        let probe = parse_probe(&probe_output(SNAPSHOT, AGENTS), N).unwrap();
+        assert_eq!(probe.focused_pane, "w1:p3");
+        assert_eq!(probe.herdr, "/home/u/.local/bin/herdr");
+        assert_eq!(probe.occupant(), Occupant::Agent);
+    }
+
+    #[test]
+    fn a_pane_with_no_agent_is_not_an_agent_pane() {
+        let agents = r#"{"result":{"agents":[{"pane_id":"w1:p9","agent":"claude"}]}}"#;
+        let probe = parse_probe(&probe_output(SNAPSHOT, agents), N).unwrap();
+        assert_eq!(probe.occupant(), Occupant::Other);
+    }
+
+    #[test]
+    fn an_empty_agent_list_is_not_an_error() {
+        let probe = parse_probe(&probe_output(SNAPSHOT, r#"{"result":{"agents":[]}}"#), N).unwrap();
+        assert_eq!(probe.occupant(), Occupant::Other);
+    }
+
+    #[test]
+    fn login_shell_noise_before_the_first_sentinel_is_discarded() {
+        let noisy = format!(
+            "welcome to the box\nmotd line\n{}",
+            probe_output(SNAPSHOT, AGENTS)
+        );
+        assert_eq!(parse_probe(&noisy, N).unwrap().focused_pane, "w1:p3");
+    }
+
+    #[test]
+    fn truncated_output_latches_nothing() {
+        let cut = format!("{N} herdr /h\n{N} snapshot\n{SNAPSHOT}\n");
+        let err = parse_probe(&cut, N).unwrap_err();
+        assert!(err.to_string().contains("ended early"));
+    }
+
+    #[test]
+    fn a_sentinel_from_another_invocation_is_ignored() {
+        let forged = probe_output(SNAPSHOT, AGENTS).replace(N, "__hdother__");
+        assert!(parse_probe(&forged, N).is_err());
+    }
+
+    #[test]
+    fn a_machine_without_herdr_says_so_rather_than_latching() {
+        let err = parse_probe(&format!("{N} herdr-missing\n{N} end\n"), N).unwrap_err();
+        assert!(err.to_string().contains("no herdr binary"));
+    }
+
+    #[test]
+    fn a_snapshot_with_no_focused_pane_is_an_error() {
+        let err =
+            parse_probe(&probe_output(r#"{"result":{"snapshot":{}}}"#, AGENTS), N).unwrap_err();
+        assert!(matches!(err, Error::NoFocusedPane));
+    }
+
+    #[test]
+    fn the_resolve_script_quotes_a_hostile_session_name() {
+        let script = resolve_script("it's; rm -rf /", "", N);
+        assert!(script.contains(r#"S='it'\''s; rm -rf /'"#));
+        assert!(!script.contains("\nrm -rf"));
+    }
+
+    #[test]
+    fn a_nonce_is_not_shared_between_invocations() {
+        assert_ne!(nonce(), nonce());
     }
 
     #[test]
