@@ -1,5 +1,6 @@
 //! The plugin's own config file, in `HERDR_PLUGIN_CONFIG_DIR`.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -16,6 +17,7 @@ pub struct Settings {
     pub silence: Silence,
     pub server: Server,
     pub status: Status,
+    pub remote: Remote,
 }
 
 /// What the tab bar chip reads in each state, printed verbatim. A tab bar
@@ -94,6 +96,69 @@ impl From<Silence> for SilenceConfig {
     }
 }
 
+/// Delivering a dictation to the machine selected in the sidebar, over SSH.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Remote {
+    /// Follow the selected machine. Off delivers locally whatever is selected.
+    pub enabled: bool,
+    /// The local ssh client.
+    pub ssh: String,
+    /// The local herdr binary. Empty discovers it.
+    pub herdr: String,
+    pub connect_timeout_secs: u64,
+    /// How long a shared ssh connection outlives its last use. Zero disables
+    /// multiplexing, which costs a full handshake per dictation.
+    pub control_persist_secs: u64,
+    /// Ceiling on one remote call, covering a host that accepts and stalls.
+    pub timeout_secs: u64,
+    /// Per-machine overrides, keyed by the id or label `herdr machine list`
+    /// reports.
+    pub machines: BTreeMap<String, RemoteMachine>,
+}
+
+impl Default for Remote {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            ssh: "ssh".into(),
+            herdr: String::new(),
+            connect_timeout_secs: 10,
+            control_persist_secs: 300,
+            timeout_secs: 20,
+            machines: BTreeMap::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct RemoteMachine {
+    /// Absolute path to herdr on that machine. Empty discovers it, which costs
+    /// nothing: discovery rides in the call that resolves the target.
+    pub herdr: String,
+}
+
+impl Remote {
+    pub fn connect_timeout(&self) -> Duration {
+        Duration::from_secs(self.connect_timeout_secs)
+    }
+
+    pub fn timeout(&self) -> Duration {
+        Duration::from_secs(self.timeout_secs)
+    }
+
+    /// Overrides for one machine, by id then label. Ids are opaque, so a user
+    /// writing this by hand reaches for the label.
+    pub fn machine(&self, id: &str, label: &str) -> RemoteMachine {
+        self.machines
+            .get(id)
+            .or_else(|| self.machines.get(label))
+            .cloned()
+            .unwrap_or_default()
+    }
+}
+
 /// Herdr sets the config directory only for a plugin process; the chip runs as
 /// a plain command, so the fallback is the path Herdr would have given.
 pub fn path() -> Option<PathBuf> {
@@ -153,6 +218,42 @@ mod tests {
         assert_eq!(settings.status.recording, "rec");
         assert_eq!(settings.status.idle, Status::default().idle);
         assert_eq!(settings.status.transcribing, Status::default().transcribing);
+    }
+
+    #[test]
+    fn remote_delivery_is_on_by_default() {
+        let settings: Settings = toml::from_str("").unwrap();
+        assert!(settings.remote.enabled);
+        assert_eq!(settings.remote.ssh, "ssh");
+        assert!(settings.remote.herdr.is_empty());
+        assert!(settings.remote.machines.is_empty());
+    }
+
+    #[test]
+    fn a_remote_section_leaves_the_other_defaults() {
+        let settings: Settings = toml::from_str("[remote]\nenabled = false\n").unwrap();
+        assert!(!settings.remote.enabled);
+        assert_eq!(
+            settings.remote.control_persist_secs,
+            Remote::default().control_persist_secs
+        );
+        assert_eq!(settings.status.idle, Status::default().idle);
+    }
+
+    #[test]
+    fn a_machine_override_is_keyed_by_id_or_label() {
+        let settings: Settings =
+            toml::from_str("[remote.machines.\"7339d11e\"]\nherdr = \"/opt/herdr\"\n").unwrap();
+        assert_eq!(
+            settings.remote.machine("7339d11e", "desk").herdr,
+            "/opt/herdr"
+        );
+        assert_eq!(settings.remote.machine("other", "desk").herdr, "");
+    }
+
+    #[test]
+    fn a_misspelt_remote_key_is_refused() {
+        assert!(toml::from_str::<Settings>("[remote]\nenable = false\n").is_err());
     }
 
     #[test]
