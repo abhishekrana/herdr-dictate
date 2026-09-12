@@ -8,7 +8,9 @@ FRAMES = os.environ.get("DEMO_FRAMES", "/tmp/herdr-dictate-demo-frames.pkl")
 OUT = os.environ.get("DEMO_GIF", os.path.join(REPO, "assets", "demo.gif"))
 FPS = 10
 MAX_HOLD = 7          # frames a static screen may occupy, so waits compress
-SIZE = 13
+SIZE = int(os.environ.get("DEMO_FONT_SIZE", 26))   # 2x, so HiDPI screens get real pixels
+SCALE = int(os.environ.get("DEMO_SCALE", 2))   # supersample, then average down
+COLOURS = int(os.environ.get("DEMO_COLOURS", 256))
 PAD = 14
 
 # Solarized Light, the theme the recorded session runs.
@@ -34,11 +36,12 @@ def colour(name, fallback):
 
 
 def font():
+    """Rendered at SCALE and averaged down, so glyph edges come out smooth."""
     for family in ("JetBrainsMono Nerd Font", "JetBrains Mono", "DejaVu Sans Mono", "monospace"):
         found = subprocess.run(["fc-match", "-f", "%{file}", family],
                                capture_output=True, text=True)
         if found.returncode == 0 and found.stdout.strip():
-            return ImageFont.truetype(found.stdout.strip(), SIZE)
+            return ImageFont.truetype(found.stdout.strip(), SIZE * SCALE)
     sys.exit("no font")
 
 
@@ -60,7 +63,7 @@ def glyph_fonts(base):
                     ["fc-match", "-f", "%{file}", f":charset={ord(ch):x}"],
                     capture_output=True, text=True).stdout.strip()
                 if found:
-                    face = ImageFont.truetype(found, SIZE)
+                    face = ImageFont.truetype(found, SIZE * SCALE)
             cache[ch] = face
         return cache[ch]
 
@@ -89,9 +92,9 @@ def main():
     pick = glyph_fonts(f)
     adv = f.getlength("M")
     rows_n, cols_n = len(picked[0]), len(picked[0][0])
-    line_h = SIZE + 5
-    W = int(adv * cols_n) + PAD * 2
-    H = line_h * rows_n + PAD * 2
+    line_h = SIZE * SCALE + 5 * SCALE
+    W = int(adv * cols_n) + PAD * 2 * SCALE
+    H = line_h * rows_n + PAD * 2 * SCALE
     print(f"{len(frames)} recorded -> {len(picked)} frames, {W}x{H}")
     with tempfile.TemporaryDirectory() as tmp:
         for i, rows in enumerate(picked):
@@ -101,7 +104,7 @@ def main():
                 for x, (ch, fg, bg, bold, reverse) in enumerate(row):
                     if ch == " " and bg in ("default", None):
                         continue
-                    px, py = PAD + x * adv, PAD + y * line_h
+                    px, py = PAD * SCALE + x * adv, PAD * SCALE + y * line_h
                     f_col = colour(fg, FG)
                     b_col = BG if bg == "default" else colour(bg, BG)
                     if reverse:
@@ -110,11 +113,12 @@ def main():
                         d.rectangle([px, py, px + adv, py + line_h], fill=b_col)
                     if ch != " ":
                         d.text((px, py), ch, font=pick(ch), fill=f_col)
+            img = img.resize((W // SCALE, H // SCALE), Image.LANCZOS)
             img.save(f"{tmp}/f{i:04d}.png")
         pal = f"{tmp}/pal.png"
         run = lambda *a: subprocess.run(a, check=True, capture_output=True)
         run("ffmpeg", "-y", "-i", f"{tmp}/f%04d.png",
-            "-vf", "palettegen=max_colors=128:stats_mode=full", pal)
+            "-vf", f"palettegen=max_colors={COLOURS}:stats_mode=full", pal)
         out = OUT
         run("ffmpeg", "-y", "-framerate", str(FPS), "-i", f"{tmp}/f%04d.png", "-i", pal,
             "-lavfi", "paletteuse=dither=none", "-loop", "0", out)

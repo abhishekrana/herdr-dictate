@@ -49,4 +49,5 @@ fi
 ./say.py "$LINE" prompt.wav
 "$VENV/bin/python" record.py
 "$VENV/bin/python" render.py
-rm -f /tmp/herdr-dictate-demo-frames.pkl
+# The frames stay put: re-rendering at other settings then needs no new recording.
+echo "frames kept at ${DEMO_FRAMES:-/tmp/herdr-dictate-demo-frames.pkl}"

@@ -26,5 +26,10 @@ created for the recording and removed after; the default microphone is never rep
 only the plugin's own recording stream is moved onto the virtual device. `record.py` refuses to
 write frames that show the operator's home path, username or hostname.
 
+Frames are kept after a run, so `render.py` alone re-renders at other settings without recording
+again. Text is drawn at twice the output size and averaged down, and the GIF ships at 2x so a
+HiDPI screen gets real pixels rather than an upscale; `DEMO_FONT_SIZE=13` halves it.
+
 `DEMO_LINE`, `DEMO_REPO`, `DEMO_SESSION`, `DEMO_COLS`, `DEMO_ROWS`, `DEMO_ANSWER_SECS`,
-`DEMO_WAV`, `DEMO_FRAMES` and `DEMO_GIF` override the defaults.
+`DEMO_WAV`, `DEMO_FRAMES`, `DEMO_GIF`, `DEMO_FONT_SIZE`, `DEMO_SCALE` and `DEMO_COLOURS` override
+the defaults.
