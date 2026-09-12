@@ -64,6 +64,9 @@ enum Command {
     Status,
     /// Report the wiring this plugin depends on.
     Doctor,
+    /// Open the shared ssh connection to the selected machine, so the next
+    /// dictation does not pay for a handshake.
+    Warm,
 }
 
 fn main() -> ExitCode {
@@ -113,6 +116,7 @@ fn run() -> Result<ExitCode> {
         }
         Command::Status => status().map(|()| ExitCode::SUCCESS),
         Command::Doctor => Ok(run_doctor()),
+        Command::Warm => warm().map(|()| ExitCode::SUCCESS),
     }
 }
 
@@ -254,6 +258,23 @@ fn toggle(submit: bool) -> Result<ExitCode> {
         tracing::debug!(%err, "could not start the model server");
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Open the shared ssh connection ahead of a dictation.
+///
+/// An optimisation, never a dependency: a cold connection costs latency the
+/// user spends speaking anyway, so failing here is not worth reporting as a
+/// failure of anything.
+fn warm() -> Result<()> {
+    let settings = Settings::load().context("reading the plugin config")?;
+    match sink::selected(&settings.remote) {
+        Ok(Some(latch)) => {
+            tracing::info!(at = latch.sink.describe(), pane = %latch.pane, "warm");
+        }
+        Ok(None) => tracing::info!("no machine selected"),
+        Err(err) => tracing::debug!(%err, "could not warm the connection"),
+    }
+    Ok(())
 }
 
 fn deliver(submit: bool) -> Result<()> {

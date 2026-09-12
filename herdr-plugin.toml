@@ -24,6 +24,11 @@ description = "Same, then press Enter once the transcript lands"
 contexts = ["workspace", "pane"]
 command = ["./target/release/herdr-dictate", "toggle", "--submit"]
 
+# Opening the shared ssh connection once means the first dictation to a saved
+# machine does not pay for a handshake.
+[[startup]]
+command = ["./target/release/herdr-dictate", "warm"]
+
 [[actions]]
 id = "doctor"
 title = "Dictate: doctor"
