@@ -103,8 +103,8 @@ The plugin is not on `PATH`, so the entry names the binary by its full path.
 `○` idle, `●` recording, `◌` while the model runs. Herdr strips control
 sequences from a command entry, so only a glyph can carry state. The defaults
 are monochrome and take the tab bar's own colour, so they follow any theme.
-`[status]` swaps them; a coloured glyph needs a font that draws it in colour,
-and a flat emoji font suits a status bar better than a glossy one.
+`[status]` swaps them. A coloured glyph carries its colour in the font, so how
+one looks is the terminal's font choice, not the plugin's.
 
 Use one display width across all three states, or the chip shifts as it changes.
 
