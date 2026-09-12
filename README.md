@@ -116,6 +116,13 @@ idle_secs = 300              # 0 keeps the model resident forever
 idle = "○ dictate"
 recording = "● dictate"
 transcribing = "◌ dictate"
+
+[remote]                     # dictating to the machine selected in Herdr's sidebar
+enabled = true
+control_persist_secs = 300   # how long a shared ssh connection outlives its last use; 0 to reconnect every time
+
+[remote.machines."<id or label from herdr machine list>"]
+herdr = "/abs/path/to/herdr" # only when that machine keeps herdr somewhere discovery misses
 ```
 
 `name`, `path` and `url` are alternatives; set exactly one.
@@ -142,9 +149,10 @@ recording never hears silence, so it will not stop on its own until you raise th
 Select a machine in Herdr's sidebar and a dictation goes to the pane you are looking at there. The microphone, the
 model and the GPU stay on this machine; only the transcript crosses.
 
-It needs an `ssh` client and non-interactive key authentication to that host: `ssh -o BatchMode=yes <host> true` must
-succeed without a prompt, and a passphrased key needs `ssh-add`. Herdr installs its own binary on the host when you
-add the machine, and that is the only thing required at the far end. `doctor` reports all of it.
+This plugin runs only on the machine you are sitting at - it is never installed on the far end, and does not need to
+be. It needs an `ssh` client and non-interactive key authentication to that host: `ssh -o BatchMode=yes <host> true`
+must succeed without a prompt, and a passphrased key needs `ssh-add`. Herdr puts its own binary on the host when you
+add the machine, and that is the only thing required there. `doctor` reports all of it.
 
 A pane whose agent has exited is back at a shell prompt, so a transcript is typed there but never submitted. Turn the
 whole thing off with:

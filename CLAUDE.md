@@ -41,8 +41,8 @@ captures into `herdr plugin log list --plugin abhishekrana.dictate`.
 `src/lib.rs` holds everything; `src/main.rs` is a thin clap shell whose every subcommand is a plain function over the
 library, so each stage is testable without a terminal, a microphone or a running Herdr.
 
-**A dictation is two invocations of `toggle`.** The first latches the target pane, writes `session::state_path()`, and
-records until SIGTERM or trailing silence. The second finds that state file and signals the first. Nothing is a
+**A dictation is two invocations of `toggle`.** The first latches the target - a pane, and the machine it belongs to
+when one is selected - writes `session::state_path()`, and records until SIGTERM or trailing silence. The second finds that state file and signals the first. Nothing is a
 daemon; the only long-lived process is the optional model server.
 
 - `context` — parses `HERDR_PLUGIN_CONTEXT_JSON`. The focused pane comes from Herdr and is **never recomputed**; it is
@@ -60,8 +60,18 @@ daemon; the only long-lived process is the optional model server.
   engine is ready, so connectability *is* readiness. Length-prefixed binary wire format, separate from Herdr's JSON.
 - `ipc` — Herdr's socket API, one JSON object per line over `HERDR_SOCKET_PATH`. Spoken to directly rather than by
   spawning `herdr`, keeping process spawns off the delivery path. Errors carry Herdr's own codes.
-- `indicator` — the pane label during a dictation. TTL refreshed by a worker thread, so a killed recorder leaves
-  nothing stale; cleared on `Drop`, before the words arrive.
+- `machine` — the saved SSH machine the sidebar has selected, read from `herdr machine list --json`, whose `selected`
+  field tracks the sidebar live. One subprocess; the parsing beside it is pure.
+- `remote` — reaching another machine's Herdr over ssh. Exactly one function touches the OS (`run`), so quoting, argv
+  and script building are tested without a host. Every interpolated value is single-quoted for a pinned `/bin/sh -s`:
+  `ssh host cmd args…` joins argv and hands it to the remote *login* shell, whose rules differ. Resolving is one
+  invocation because exec channel setup, not the remote work, is what costs.
+- `sink` — where a dictation lands, local or remote. The surface is the plugin's intent (`deliver`), not Herdr's RPCs,
+  which is what lets the remote arm fuse checking the pane's occupant with delivering into a single round trip. An
+  agent that has exited leaves a live shell, so that case types the words and refuses to submit them.
+- `indicator` — the pane label during a dictation, refreshed by a worker thread so a killed recorder leaves nothing
+  stale; cleared on `Drop`, before the words arrive. The sink sets the cadence, since a remote refresh costs a round
+  trip. It waits on a condvar rather than sleeping, so `Drop` does not hold delivery back for the rest of an interval.
 - `config` + `setup` — Herdr plugins cannot register their own keys, so `setup` appends them to the user's
   `config.toml`. It **appends text rather than re-serialising** (a round-trip would drop comments and ordering), backs
   up, writes atomically, refuses invalid TOML, and matches by action so a rebound key is not offered twice.
@@ -75,8 +85,8 @@ daemon; the only long-lived process is the optional model server.
 
 ### Environment contract
 
-Herdr injects `HERDR_SOCKET_PATH`, `HERDR_PLUGIN_CONTEXT_JSON`, `HERDR_PANE_ID`, `HERDR_PLUGIN_CONFIG_DIR` and
-`HERDR_PLUGIN_STATE_DIR`. Every lookup treats empty as unset and falls back to the path Herdr would have given, so the
+Herdr injects `HERDR_SOCKET_PATH`, `HERDR_BIN_PATH`, `HERDR_PLUGIN_CONTEXT_JSON`, `HERDR_PANE_ID`,
+`HERDR_PLUGIN_CONFIG_DIR` and `HERDR_PLUGIN_STATE_DIR`. Every lookup treats empty as unset and falls back to the path Herdr would have given, so the
 binary stays runnable outside Herdr — the tab bar chip runs exactly that way. `HERDR_CONFIG_PATH` overrides the user
 config location. The model server's socket lives under `XDG_RUNTIME_DIR`.
 
