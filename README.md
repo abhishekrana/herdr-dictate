@@ -137,6 +137,23 @@ recording never hears silence, so it will not stop on its own until you raise th
 
 **Linux only** - the audio capture path does not handle macOS sample rates yet.
 
+## Saved machines
+
+Select a machine in Herdr's sidebar and a dictation goes to the pane you are looking at there. The microphone, the
+model and the GPU stay on this machine; only the transcript crosses.
+
+It needs an `ssh` client and non-interactive key authentication to that host: `ssh -o BatchMode=yes <host> true` must
+succeed without a prompt, and a passphrased key needs `ssh-add`. Herdr installs its own binary on the host when you
+add the machine, and that is the only thing required at the far end. `doctor` reports all of it.
+
+A pane whose agent has exited is back at a shell prompt, so a transcript is typed there but never submitted. Turn the
+whole thing off with:
+
+```toml
+[remote]
+enabled = false
+```
+
 ## License
 
 MIT - see [LICENSE](LICENSE).

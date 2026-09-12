@@ -221,8 +221,8 @@ pub fn run(ssh: &Ssh, script: &str) -> Result<Output> {
 /// no longer hosts an agent.
 pub const AGENT_GONE: i32 = 3;
 
-/// A machine resolved far enough to deliver to. Only [`resolve`] builds one,
-/// so holding it is proof the session and binary were found.
+/// A machine resolved far enough to deliver to. Only `sink::selected` builds
+/// one, so holding it is proof the session and binary were found.
 #[derive(Clone, Debug)]
 pub struct Target {
     pub ssh: Ssh,

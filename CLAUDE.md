@@ -82,8 +82,9 @@ config location. The model server's socket lives under `XDG_RUNTIME_DIR`.
 
 ## Rules
 
-- **Self-sufficient.** No external server, script, font or runtime the user has to install; the only program this
-  binary starts is itself. It assumes no particular terminal, theme or dotfiles.
+- **Self-sufficient.** No external server, script, font or runtime the user has to install. The only programs this
+  binary starts are itself, and - when a saved machine is selected - `ssh` and the Herdr CLI, both of which Herdr's
+  own remote support already requires. It assumes no particular terminal, theme or dotfiles.
 - **Nothing personal or work-related in this repository.** The public identity this project is published under is the
   exception and the whole of it: the owner name in `LICENSE`, and the GitHub handle in the plugin id, URLs and the
   commit identity. Everything else stays out — employer, colleagues, hostnames, addresses, home directory paths,

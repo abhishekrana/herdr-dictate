@@ -58,8 +58,8 @@ Per dictation, nothing cached:
 
 1. `herdr machine list --json` on the client. The entry with `selected` true gives the SSH target and the profile's
    session name. This tracks the sidebar live, so it is the only source of truth for which machine is meant.
-2. One invocation on that machine returning everything the latch needs: the session's socket path, the snapshot's
-   `focused_pane_id`, and the agent list.
+2. One invocation on that machine returning everything the latch needs: the snapshot's `focused_pane_id` and the
+   agent list.
 
 The remote half must be a single invocation. Each SSH exec channel costs a round trip or three, so the same three
 queries issued separately measured 1550 ms cold against 76 ms batched and warm.
@@ -67,8 +67,8 @@ queries issued separately measured 1550 ms cold against 76 ms batched and warm.
 Two details the remote half depends on:
 
 - **Sessions have separate sockets.** A profile may name a session other than the default, and a bare CLI call hits
-  the default one. Read the session's `socket_path` from `herdr session list --json` and pass it as
-  `HERDR_SOCKET_PATH` to every subsequent call.
+  the default one. `herdr --session <name>` selects it, so every remote call carries that flag. A name with no server
+  behind it reports `server_not_running` rather than answering for the wrong session.
 - **The remote binary needs an absolute path.** It commonly lives under the user's home, which a non-interactive
   shell does not have on PATH, so a bare `herdr` fails. Resolve the path once at setup and store it per machine.
 
@@ -78,8 +78,8 @@ With no machine selected, this collapses to the existing local path.
 
 An agent pane takes `herdr agent prompt <name>`: it submits text and Enter as one operation honouring bracketed
 paste, and refuses with `agent_blocked` at an approval dialog, so a transcript is never typed into a prompt as stray
-keys. Prefer the agent name over the pane id - a name follows the pane's occupant and is cleared when that agent
-exits, so a stale target fails loudly.
+keys. Target it by pane id: an agent started by hand carries no name at all, and agent commands accept the pane
+that hosts one.
 
 Anything else takes `herdr pane send-text`, then `herdr pane send-keys <pane> enter` when submitting.
 
@@ -87,7 +87,10 @@ Anything else takes `herdr pane send-text`, then `herdr pane send-keys <pane> en
 a transcript into that pane would execute it as a command. If the occupant changed between latch and delivery,
 deliver the text without Enter, or refuse.
 
-Pass the transcript on stdin, never argv: dictated text contains quotes.
+Both verbs take the text as argv, so quoting is the hazard. The remote command is a fixed `/bin/sh -s` reading its
+script from stdin, and every value interpolated into that script - transcript, pane, session, binary path - is
+single-quoted. Pinning the interpreter is what makes the quoting provable: `ssh host cmd args...` joins argv and
+hands the result to the remote login shell, whose rules differ.
 
 ## Indicator
 
