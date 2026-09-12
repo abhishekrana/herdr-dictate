@@ -9,6 +9,7 @@ use std::time::Duration;
 use crate::audio::{SilenceConfig, rms};
 use crate::context::Context;
 use crate::ipc::Client;
+use crate::settings::Settings;
 use crate::{PLUGIN_ID, capture, config, server};
 
 /// The entry to add to Herdr's own config, naming this binary by its real path:
@@ -82,7 +83,143 @@ pub fn run() -> Vec<Check> {
         registration(),
         status_chip(),
         plugin_dirs(),
+        remote_machine(),
+        remote_ssh(),
+        remote_herdr(),
+        remote_session(),
+        remote_control(),
     ]
+}
+
+/// Everything the remote checks need, fetched once.
+///
+/// One round trip answers three questions; asking separately would be three
+/// connections and, worse, three different answers.
+fn probe() -> &'static Option<RemoteState> {
+    static PROBE: std::sync::OnceLock<Option<RemoteState>> = std::sync::OnceLock::new();
+    PROBE.get_or_init(remote_state)
+}
+
+struct RemoteState {
+    machine: crate::machine::Machine,
+    latch: Option<crate::sink::Latch>,
+    error: Option<String>,
+}
+
+fn remote_state() -> Option<RemoteState> {
+    let config = Settings::load().unwrap_or_default().remote;
+    if !config.enabled {
+        return None;
+    }
+    let machine = crate::machine::selected(&crate::machine::herdr_bin(&config.herdr))
+        .ok()
+        .flatten()?;
+    let (latch, error) = match crate::sink::selected(&config) {
+        Ok(latch) => (latch, None),
+        Err(err) => (None, Some(err.to_string())),
+    };
+    Some(RemoteState {
+        machine,
+        latch,
+        error,
+    })
+}
+
+/// Which machine a dictation would go to. Nothing selected is the ordinary
+/// case, not a problem.
+fn remote_machine() -> Check {
+    let name = "remote.machine";
+    let Some(state) = probe() else {
+        return ok(name, "none selected; delivering locally");
+    };
+    if !state.machine.enabled {
+        return fail(
+            name,
+            format!("{} is selected but disabled", state.machine.label),
+            "herdr machine enable <id>, or select another machine",
+        );
+    }
+    ok(
+        name,
+        format!("{} ({})", state.machine.label, state.machine.target),
+    )
+}
+
+/// Non-interactive key auth, which is a precondition rather than a nicety.
+fn remote_ssh() -> Check {
+    let name = "remote.ssh";
+    let Some(state) = probe() else {
+        return ok(name, "no machine selected");
+    };
+    match &state.error {
+        None => ok(name, format!("reaches {}", state.machine.target)),
+        Some(err) => fail(
+            name,
+            err.clone(),
+            format!(
+                "ssh {} true must succeed without a prompt; host keys are checked \
+                 strictly, so connect once by hand first, and load a passphrased \
+                 key with ssh-add",
+                state.machine.target
+            ),
+        ),
+    }
+}
+
+/// Herdr commonly lives under the user's home, which a non-interactive shell
+/// does not have on PATH.
+fn remote_herdr() -> Check {
+    let name = "remote.herdr";
+    let Some(state) = probe() else {
+        return ok(name, "no machine selected");
+    };
+    match state.latch.as_ref().map(|l| l.sink.describe_binary()) {
+        Some(path) if !path.is_empty() => ok(name, path.to_string()),
+        _ => warn(
+            name,
+            "not resolved",
+            format!(
+                "set [remote.machines.\"{}\"] herdr to its absolute path",
+                state.machine.id
+            ),
+        ),
+    }
+}
+
+/// The pane a dictation would land in, and whether an agent is living there.
+fn remote_session() -> Check {
+    let name = "remote.session";
+    let Some(state) = probe() else {
+        return ok(name, "no machine selected");
+    };
+    let Some(latch) = state.latch.as_ref() else {
+        return fail(
+            name,
+            format!("session {} did not answer", state.machine.session),
+            "start that session on the machine, or fix the profile's session name",
+        );
+    };
+    let occupant = match latch.occupant {
+        crate::remote::Occupant::Agent => "an agent",
+        crate::remote::Occupant::Other => "a shell, so nothing will be submitted",
+    };
+    ok(name, format!("{} hosts {occupant}", latch.pane))
+}
+
+/// Sharing one ssh connection is what keeps a dictation off a fresh handshake.
+fn remote_control() -> Check {
+    let name = "remote.control";
+    let Some(state) = probe() else {
+        return ok(name, "no machine selected");
+    };
+    match crate::remote::control_path(&state.machine.target) {
+        Some(path) => ok(name, path.display().to_string()),
+        None => warn(
+            name,
+            "the socket path is too long to share a connection",
+            "every call reconnects, costing about half a second each",
+        ),
+    }
 }
 
 /// Whether Herdr runs this binary, or another build of the plugin.

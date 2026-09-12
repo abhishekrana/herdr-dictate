@@ -107,6 +107,14 @@ impl Sink {
         }
     }
 
+    /// The herdr binary that answered, so doctor can name what to pin.
+    pub fn describe_binary(&self) -> &str {
+        match self {
+            Self::Local(_) => "",
+            Self::Remote(target) => &target.herdr,
+        }
+    }
+
     pub fn describe(&self) -> &str {
         match self {
             Self::Local(_) => "local",
