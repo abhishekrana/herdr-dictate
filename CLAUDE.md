@@ -94,8 +94,9 @@ config location. The model server's socket lives under `XDG_RUNTIME_DIR`.
 - **Herdr colours nothing for a plugin.** A tab bar segment is text with no style, and the API exposes no colour
   anywhere, so the chip always takes the tab bar's own colour.
 
-`assets/` holds only what the README embeds. The tooling that produces it lives in
-`scripts/demo/`, which rebuilds `assets/demo.gif` from nothing in one command.
+`assets/` holds what the README embeds and `.github/` what GitHub reads; the tooling that produces
+both lives in `scripts/demo/`, which rebuilds `assets/demo.gif` and `.github/social-preview.png`
+from nothing in one command.
 
 ## Deploy
 

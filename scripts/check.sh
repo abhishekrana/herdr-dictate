@@ -53,7 +53,7 @@ fi
 
 if command -v shellcheck >/dev/null 2>&1; then
     step "shellcheck"
-    shellcheck -x scripts/*.sh
+    shellcheck -x scripts/*.sh scripts/demo/*.sh
 else
     skip "shellcheck" "apt install shellcheck"
 fi
