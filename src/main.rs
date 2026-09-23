@@ -76,6 +76,8 @@ fn main() -> ExitCode {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .with_writer(std::io::stderr)
+        // Herdr's plugin log and the server's log file are read as plain text.
+        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()))
         .init();
 
     match run() {
@@ -192,16 +194,27 @@ fn toggle(submit: bool) -> Result<ExitCode> {
         }),
     })?;
     tracing::info!(%pane, submit, at = sink.describe(), "recording");
-    let indicator = Indicator::show(sink.clone(), pane.clone(), "● dictating");
+    let indicator = Indicator::show(sink.clone(), pane.clone(), Phase::Recording);
     let recording = capture::record(settings.silence.into(), stop).context("recording")?;
 
+    // Loudness against the threshold is what tells a muted or distant
+    // microphone from speech the model then dropped.
+    tracing::info!(
+        secs = recording.duration().as_secs_f64(),
+        stopped_by = ?recording.stopped_by,
+        heard_speech = recording.heard_speech,
+        loudest = recording.loudest.round(),
+        threshold = settings.silence.threshold,
+        "recorded"
+    );
     if recording.samples.is_empty() {
         tracing::info!("nothing recorded");
         return Ok(ExitCode::SUCCESS);
     }
 
-    indicator.set("◌ transcribing");
+    indicator.set(Phase::Transcribing);
     active.transcribing();
+    let transcribing = std::time::Instant::now();
     let served = settings
         .server
         .enabled
@@ -218,10 +231,14 @@ fn toggle(submit: bool) -> Result<ExitCode> {
                 .context("transcribing")?
         }
     };
+    let transcribe_ms = transcribing.elapsed().as_millis();
     if text.is_empty() {
         tracing::info!(
             secs = recording.duration().as_secs_f64(),
             stopped_by = ?recording.stopped_by,
+            heard_speech = recording.heard_speech,
+            warm = warmed,
+            transcribe_ms,
             "no speech"
         );
         return Ok(ExitCode::SUCCESS);
@@ -252,6 +269,8 @@ fn toggle(submit: bool) -> Result<ExitCode> {
         ?delivery,
         ms = handed_over.elapsed().as_millis(),
         stopped_by = ?recording.stopped_by,
+        warm = warmed,
+        transcribe_ms,
         "delivered"
     );
 

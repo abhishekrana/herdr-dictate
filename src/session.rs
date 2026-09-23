@@ -20,6 +20,24 @@ pub enum Phase {
     Transcribing,
 }
 
+impl Phase {
+    /// What the pane shows during this phase.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Recording => "● dictating",
+            Self::Transcribing => "◌ transcribing",
+        }
+    }
+
+    /// The name the state files carry.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Recording => "recording",
+            Self::Transcribing => "transcribing",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Session {
     pub pid: u32,

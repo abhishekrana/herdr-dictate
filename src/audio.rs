@@ -73,6 +73,7 @@ const WINDOW: usize = (TARGET_RATE / 50) as usize;
 pub struct SilenceDetector {
     config: SilenceConfig,
     heard_speech: bool,
+    loudest: f64,
     voiced: Duration,
     silent: Duration,
     elapsed: Duration,
@@ -83,6 +84,7 @@ impl SilenceDetector {
         Self {
             config,
             heard_speech: false,
+            loudest: 0.0,
             voiced: Duration::ZERO,
             silent: Duration::ZERO,
             elapsed: Duration::ZERO,
@@ -107,7 +109,9 @@ impl SilenceDetector {
             return Decision::MaxDuration;
         }
 
-        if rms(window) >= self.config.threshold {
+        let level = rms(window);
+        self.loudest = self.loudest.max(level);
+        if level >= self.config.threshold {
             self.voiced += duration;
             if self.voiced >= self.config.min_speech {
                 self.heard_speech = true;
@@ -131,6 +135,11 @@ impl SilenceDetector {
 
     pub fn heard_speech(&self) -> bool {
         self.heard_speech
+    }
+
+    /// The RMS of the loudest window so far, to set against the threshold.
+    pub fn loudest(&self) -> f64 {
+        self.loudest
     }
 }
 

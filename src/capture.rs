@@ -21,6 +21,10 @@ pub struct Recording {
     /// 16 kHz mono.
     pub samples: Vec<i16>,
     pub stopped_by: Decision,
+    /// Whether loudness ever held long enough to count as speech.
+    pub heard_speech: bool,
+    /// RMS of the loudest 20 ms window, in `i16` units.
+    pub loudest: f64,
 }
 
 impl Recording {
@@ -121,6 +125,8 @@ pub fn record(silence: SilenceConfig, stop: Arc<AtomicBool>) -> Result<Recording
     Ok(Recording {
         samples,
         stopped_by,
+        heard_speech: detector.heard_speech(),
+        loudest: detector.loudest(),
     })
 }
 

@@ -81,16 +81,37 @@ fn call(samples: &[i16]) -> Result<String> {
     }
 }
 
+/// Where a server started by [`spawn`] logs, beside the recording state.
+pub fn log_path() -> Result<PathBuf> {
+    Ok(crate::session::state_path()?.with_file_name("server.log"))
+}
+
 /// Start a detached server. Returns once it is spawned, not once it is ready.
+///
+/// Its log starts empty with each server, so it holds one server's life.
 pub fn spawn() -> Result<()> {
     use std::os::unix::process::CommandExt;
+
+    let log = log_path().and_then(|path| {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        Ok(std::fs::File::create(path)?)
+    });
+    let stderr = match log {
+        Ok(file) => std::process::Stdio::from(file),
+        Err(err) => {
+            tracing::debug!(%err, "no server log");
+            std::process::Stdio::null()
+        }
+    };
 
     let exe = std::env::current_exe()?;
     std::process::Command::new(exe)
         .arg("serve")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stderr(stderr)
         // Its own process group, so the press that spawned it can exit freely.
         .process_group(0)
         .spawn()?;

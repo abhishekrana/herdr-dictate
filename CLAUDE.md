@@ -34,7 +34,8 @@ not forward it. `lto` is off: the work is in whisper.cpp, which it does not reac
 
 `doctor`, `record --out FILE`, `transcribe FILE` (16 kHz mono WAV) and `setup --print` run outside Herdr; `toggle` and
 `deliver` need a live socket. `HERDR_DICTATE_LOG=debug` raises the level; all logging goes to stderr, which Herdr
-captures into `herdr plugin log list --plugin abhishekrana.dictate`.
+captures into `herdr plugin log list --plugin abhishekrana.dictate`; the model server writes `server.log` in the state
+directory. Info level never carries a transcript: lines name lengths, levels and outcomes.
 
 ## Architecture
 
@@ -72,6 +73,8 @@ daemon; the only long-lived process is the optional model server.
 - `indicator` — the pane label during a dictation, refreshed by a worker thread so a killed recorder leaves nothing
   stale; cleared on `Drop`, before the words arrive. The sink sets the cadence, since a remote refresh costs a round
   trip. It waits on a condvar rather than sleeping, so `Drop` does not hold delivery back for the rest of an interval.
+  A remote label also writes `remote.json` on that host: the phase and an expiry in its clock, never a pid, since the
+  recorder is not a process there.
 - `config` + `setup` — Herdr plugins cannot register their own keys, so `setup` appends them to the user's
   `config.toml`. It **appends text rather than re-serialising** (a round-trip would drop comments and ordering), backs
   up, writes atomically, refuses invalid TOML, and matches by action so a rebound key is not offered twice.

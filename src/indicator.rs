@@ -7,6 +7,7 @@
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 
+use crate::session::Phase;
 use crate::sink::Sink;
 
 /// A host that has gone away fails every refresh, and each failure costs a
@@ -15,7 +16,7 @@ const MAX_FAILURES: u32 = 3;
 
 /// Shows a label on a pane until dropped.
 pub struct Indicator {
-    label: Arc<Mutex<String>>,
+    phase: Arc<Mutex<Phase>>,
     stop: Arc<(Mutex<bool>, Condvar)>,
     worker: Option<JoinHandle<()>>,
     sink: Sink,
@@ -23,26 +24,27 @@ pub struct Indicator {
 }
 
 impl Indicator {
-    pub fn show(sink: Sink, pane: String, label: impl Into<String>) -> Self {
-        let label = Arc::new(Mutex::new(label.into()));
+    pub fn show(sink: Sink, pane: String, phase: Phase) -> Self {
+        let phase = Arc::new(Mutex::new(phase));
         let stop = Arc::new((Mutex::new(false), Condvar::new()));
 
         let worker = std::thread::spawn({
             let (sink, pane) = (sink.clone(), pane.clone());
-            let (label, stop) = (Arc::clone(&label), Arc::clone(&stop));
+            let (phase, stop) = (Arc::clone(&phase), Arc::clone(&stop));
             let (ttl, refresh) = (sink.ttl(), sink.refresh());
             move || {
                 let (lock, cvar) = &*stop;
                 let mut failures = 0;
                 loop {
-                    let text = label.lock().map(|l| l.clone()).unwrap_or_default();
+                    let now = phase.lock().map(|p| *p).unwrap_or_default();
                     // A failure here costs an indicator, never a transcript.
-                    match sink.set_label(&pane, &text, ttl) {
+                    match sink.set_label(&pane, now, ttl) {
                         Ok(()) => failures = 0,
                         Err(err) => {
-                            tracing::debug!(%err, "indicator");
                             failures += 1;
+                            tracing::warn!(at = sink.describe(), %pane, failures, %err, "indicator not set");
                             if failures >= MAX_FAILURES {
+                                tracing::warn!(at = sink.describe(), %pane, "indicator given up; it expires on its own");
                                 return;
                             }
                         }
@@ -61,7 +63,7 @@ impl Indicator {
         });
 
         Self {
-            label,
+            phase,
             stop,
             worker: Some(worker),
             sink,
@@ -70,12 +72,13 @@ impl Indicator {
     }
 
     /// Change what the pane shows.
-    pub fn set(&self, label: impl Into<String>) {
-        let text = label.into();
-        if let Ok(mut current) = self.label.lock() {
-            current.clone_from(&text);
+    pub fn set(&self, phase: Phase) {
+        if let Ok(mut current) = self.phase.lock() {
+            *current = phase;
         }
-        let _ = self.sink.set_label(&self.pane, &text, self.sink.ttl());
+        if let Err(err) = self.sink.set_label(&self.pane, phase, self.sink.ttl()) {
+            tracing::warn!(at = self.sink.describe(), pane = %self.pane, %err, "indicator not set");
+        }
     }
 }
 
@@ -89,6 +92,8 @@ impl Drop for Indicator {
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
-        let _ = self.sink.clear_label(&self.pane);
+        if let Err(err) = self.sink.clear_label(&self.pane) {
+            tracing::warn!(at = self.sink.describe(), pane = %self.pane, %err, "indicator not cleared");
+        }
     }
 }

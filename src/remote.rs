@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
+use crate::session::Phase;
 use crate::{Error, PLUGIN_ID, Result};
 
 /// `sun_path` bounds an ssh ControlPath; ssh refuses one at or above this.
@@ -307,26 +308,42 @@ pub fn deliver_script(target: &Target, pane: &str, text: &str, submit: bool) -> 
     script
 }
 
-/// Set or clear the pane label that shows a dictation is running.
+/// The file on the remote machine, beside that machine's own plugin state,
+/// that names the phase of a dictation delivering there.
+pub const REMOTE_STATE: &str = "remote.json";
+
+/// Set or clear the pane label that shows a dictation is running, and the
+/// remote state file that lets anything on that machine show it too.
 ///
 /// The user is looking at the remote pane, so the indicator has to live there.
-pub fn label_script(target: &Target, pane: &str, label: Option<(&str, Duration)>) -> String {
+/// The file carries an expiry in the remote clock rather than a pid, since the
+/// recorder is not a process on that machine; a refresh that never comes
+/// leaves it expired, not stale. Writing it can never fail the label.
+pub fn label_script(target: &Target, pane: &str, label: Option<(Phase, Duration)>) -> String {
     let mut script = String::from("set -u\n");
     script.push_str(&format!("H={}\n", sq(&target.herdr)));
     script.push_str(&format!("S={}\n", sq(&target.session)));
     script.push_str(&format!("P={}\n", sq(pane)));
     script.push_str(&format!("O={}\n", sq(crate::PLUGIN_ID)));
+    script.push_str(&format!(
+        "F=${{XDG_STATE_HOME:-$HOME/.local/state}}/herdr/plugins/$O/{REMOTE_STATE}\n"
+    ));
     match label {
-        Some((text, ttl)) => {
-            script.push_str(&format!("L={}\n", sq(text)));
+        Some((phase, ttl)) => {
+            script.push_str(&format!("L={}\n", sq(phase.label())));
+            script.push_str(&format!("A={}\n", sq(phase.as_str())));
             script.push_str(&format!("W={}\n", ttl.as_millis()));
             script.push_str(
-                "exec \"$H\" --session \"$S\" pane report-metadata \"$P\" \
+                "{ mkdir -p \"${F%/*}\" && \
+                 printf '{\"phase\":\"%s\",\"until\":%d}\\n' \"$A\" $(( $(date +%s) + $W / 1000 )) >\"$F.tmp\" && \
+                 mv -f \"$F.tmp\" \"$F\"; } 2>/dev/null\n\
+                 exec \"$H\" --session \"$S\" pane report-metadata \"$P\" \
                  --source \"$O\" --display-agent \"$L\" --ttl-ms \"$W\"\n",
             );
         }
         None => script.push_str(
-            "exec \"$H\" --session \"$S\" pane report-metadata \"$P\" \
+            "rm -f \"$F\"\n\
+             exec \"$H\" --session \"$S\" pane report-metadata \"$P\" \
              --source \"$O\" --clear-display-agent\n",
         ),
     }
@@ -698,5 +715,71 @@ mod tests {
     fn an_oversized_script_is_refused_before_it_is_sent() {
         let err = run(&ssh(), "test", &"x".repeat(MAX_SCRIPT_BYTES + 1)).unwrap_err();
         assert!(err.to_string().contains("over the limit"));
+    }
+
+    /// Runs a label script as the remote would, with `true` standing in for herdr.
+    fn run_label(state: &std::path::Path, label: Option<(Phase, Duration)>) -> i32 {
+        let target = Target {
+            ssh: ssh(),
+            herdr: "true".into(),
+            session: "default".into(),
+            label: "remote".into(),
+        };
+        let mut child = Command::new("/bin/sh")
+            .arg("-s")
+            .env("XDG_STATE_HOME", state)
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("/bin/sh");
+        let script = label_script(&target, "w1:p1", label);
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(script.as_bytes())
+            .unwrap();
+        child.wait().unwrap().code().unwrap_or(-1)
+    }
+
+    #[test]
+    fn the_label_leaves_the_phase_and_its_expiry_on_the_remote() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir
+            .path()
+            .join("herdr/plugins")
+            .join(PLUGIN_ID)
+            .join(REMOTE_STATE);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let ttl = Duration::from_secs(12);
+        assert_eq!(run_label(dir.path(), Some((Phase::Transcribing, ttl))), 0);
+        let state: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(state["phase"], "transcribing");
+        let until = state["until"].as_u64().unwrap();
+        assert!(
+            (now + 11..=now + 14).contains(&until),
+            "until {until}, now {now}"
+        );
+
+        assert_eq!(run_label(dir.path(), None), 0);
+        assert!(!file.exists());
+    }
+
+    #[test]
+    fn a_state_file_that_cannot_be_written_does_not_fail_the_label() {
+        let dir = tempfile::tempdir().unwrap();
+        // A file where the directory should be.
+        std::fs::write(dir.path().join("herdr"), "").unwrap();
+        assert_eq!(
+            run_label(
+                dir.path(),
+                Some((Phase::Recording, Duration::from_secs(12)))
+            ),
+            0
+        );
     }
 }

@@ -141,7 +141,11 @@ herdr plugin log list --plugin abhishekrana.dictate
 compare the room against the speech threshold: if it reports a room louder than `threshold`, the
 recording never hears silence, so it will not stop on its own until you raise that number.
 
-`HERDR_DICTATE_LOG=debug` increases logging.
+Each dictation logs a `recorded` line: its length, what stopped it, and its loudest moment against `threshold`. A
+`no speech` that follows a loudness well under `threshold` is a quiet or wrong microphone. One well over it is sound
+the model heard as no words, and `whisper heard no words` shows what it made of it. The model server logs to
+`server.log` in the plugin's state directory, emptied each time a server starts. `HERDR_DICTATE_LOG=debug` increases
+logging.
 
 **Linux only** - the audio capture path does not handle macOS sample rates yet.
 
@@ -154,6 +158,17 @@ This plugin runs only on the machine you are sitting at - it is never installed 
 be. It needs an `ssh` client and non-interactive key authentication to that host: `ssh -o BatchMode=yes <host> true`
 must succeed without a prompt, and a passphrased key needs `ssh-add`. Herdr puts its own binary on the host when you
 add the machine, and that is the only thing required there. `doctor` reports all of it.
+
+While a dictation runs, that pane's label says so, and `remote.json` in the host's plugin state directory
+(`~/.local/state/herdr/plugins/abhishekrana.dictate/`) holds its phase and an expiry in the host's clock, for anything
+there - a status line - to show:
+
+```json
+{ "phase": "recording", "until": 1790176000 }
+```
+
+It is refreshed well inside that expiry and removed when the dictation ends, so a file past `until` is a dictation
+that lost its connection.
 
 A pane whose agent has exited is back at a shell prompt, so a transcript is typed there but never submitted. Turn the
 whole thing off with:

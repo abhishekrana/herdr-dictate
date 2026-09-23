@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use crate::machine::{self, Machine};
 use crate::remote::{self, Occupant, Target};
+use crate::session::Phase;
 use crate::settings;
 use crate::{Error, Result, ipc};
 
@@ -71,11 +72,11 @@ impl Sink {
         }
     }
 
-    pub fn set_label(&self, pane: &str, label: &str, ttl: Duration) -> Result<()> {
+    pub fn set_label(&self, pane: &str, phase: Phase, ttl: Duration) -> Result<()> {
         match self {
-            Self::Local(client) => client.set_pane_label(pane, label, ttl),
+            Self::Local(client) => client.set_pane_label(pane, phase.label(), ttl),
             Self::Remote(target) => {
-                let script = remote::label_script(target, pane, Some((label, ttl)));
+                let script = remote::label_script(target, pane, Some((phase, ttl)));
                 remote::run(&target.ssh, "label", &script).map(|_| ())
             }
         }

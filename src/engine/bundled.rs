@@ -106,7 +106,12 @@ impl Engine for Bundled {
             }
         }
         tracing::debug!(raw = ?text, "whisper");
-        Ok(super::strip_non_speech(&text))
+        let words = super::strip_non_speech(&text);
+        if words.is_empty() && !text.trim().is_empty() {
+            // Nothing here survived as words, so it is logged by default.
+            tracing::info!(raw = ?text, "whisper heard no words");
+        }
+        Ok(words)
     }
 
     fn describe(&self) -> String {
