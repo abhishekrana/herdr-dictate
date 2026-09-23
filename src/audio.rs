@@ -45,6 +45,9 @@ pub struct SilenceConfig {
     /// Trailing silence that ends a recording. Zero disables auto-stop.
     pub trailing: Duration,
     pub max_duration: Duration,
+    /// Unbroken loudness that counts as the speaker starting. Shorter bursts -
+    /// a key click, a knock - never arm the trailing-silence stop.
+    pub min_speech: Duration,
 }
 
 impl Default for SilenceConfig {
@@ -53,9 +56,14 @@ impl Default for SilenceConfig {
             threshold: 300.0,
             trailing: Duration::from_secs_f64(2.0),
             max_duration: Duration::from_secs(120),
+            min_speech: Duration::from_millis(200),
         }
     }
 }
+
+/// Loudness is judged per window, so a verdict does not depend on how the
+/// device happens to buffer.
+const WINDOW: usize = (TARGET_RATE / 50) as usize;
 
 /// Decides when a recording has ended, from the frames fed to it.
 ///
@@ -65,6 +73,7 @@ impl Default for SilenceConfig {
 pub struct SilenceDetector {
     config: SilenceConfig,
     heard_speech: bool,
+    voiced: Duration,
     silent: Duration,
     elapsed: Duration,
 }
@@ -74,6 +83,7 @@ impl SilenceDetector {
         Self {
             config,
             heard_speech: false,
+            voiced: Duration::ZERO,
             silent: Duration::ZERO,
             elapsed: Duration::ZERO,
         }
@@ -81,17 +91,33 @@ impl SilenceDetector {
 
     /// Feed one frame of mono samples and ask whether to keep recording.
     pub fn push(&mut self, frame: &[i16]) -> Decision {
-        let duration = Duration::from_secs_f64(frame.len() as f64 / TARGET_RATE as f64);
+        for window in frame.chunks(WINDOW) {
+            let decision = self.push_window(window);
+            if decision != Decision::Continue {
+                return decision;
+            }
+        }
+        Decision::Continue
+    }
+
+    fn push_window(&mut self, window: &[i16]) -> Decision {
+        let duration = Duration::from_secs_f64(window.len() as f64 / TARGET_RATE as f64);
         self.elapsed += duration;
         if self.elapsed >= self.config.max_duration {
             return Decision::MaxDuration;
         }
 
-        if rms(frame) >= self.config.threshold {
-            self.heard_speech = true;
+        if rms(window) >= self.config.threshold {
+            self.voiced += duration;
+            if self.voiced >= self.config.min_speech {
+                self.heard_speech = true;
+            }
             self.silent = Duration::ZERO;
-        } else if self.heard_speech {
-            self.silent += duration;
+        } else {
+            self.voiced = Duration::ZERO;
+            if self.heard_speech {
+                self.silent += duration;
+            }
         }
 
         if !self.config.trailing.is_zero()
@@ -168,6 +194,44 @@ mod tests {
         assert_eq!(detector.push(&second(5000)), Decision::Continue);
         assert_eq!(detector.push(&second(0)), Decision::Continue);
         assert_eq!(detector.push(&second(0)), Decision::SilenceReached);
+    }
+
+    #[test]
+    fn a_click_before_speaking_does_not_arm_the_stop() {
+        let mut detector = SilenceDetector::new(SilenceConfig::default());
+        assert_eq!(detector.push(&frame(8000, 800)), Decision::Continue);
+        for _ in 0..5 {
+            assert_eq!(detector.push(&second(0)), Decision::Continue);
+        }
+        assert!(!detector.heard_speech());
+    }
+
+    #[test]
+    fn scattered_noise_never_adds_up_to_speech() {
+        let mut detector = SilenceDetector::new(SilenceConfig::default());
+        for _ in 0..50 {
+            detector.push(&frame(8000, WINDOW));
+            detector.push(&frame(0, WINDOW));
+        }
+        assert!(!detector.heard_speech());
+    }
+
+    #[test]
+    fn speech_after_a_click_still_ends_on_trailing_silence() {
+        let mut detector = SilenceDetector::new(SilenceConfig::default());
+        detector.push(&frame(8000, 800));
+        detector.push(&second(0));
+        detector.push(&second(5000));
+        assert_eq!(detector.push(&second(0)), Decision::Continue);
+        assert_eq!(detector.push(&second(0)), Decision::SilenceReached);
+    }
+
+    #[test]
+    fn the_verdict_does_not_depend_on_frame_size() {
+        let mut detector = SilenceDetector::new(SilenceConfig::default());
+        let mut speech = second(5000);
+        speech.extend(frame(0, 2 * TARGET_RATE as usize));
+        assert_eq!(detector.push(&speech), Decision::SilenceReached);
     }
 
     #[test]

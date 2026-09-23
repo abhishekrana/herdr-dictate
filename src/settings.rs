@@ -73,6 +73,8 @@ pub struct Silence {
     /// Trailing silence that ends a recording. Zero disables auto-stop.
     pub trailing_secs: f64,
     pub max_secs: f64,
+    /// Unbroken loudness that counts as the speaker starting.
+    pub min_speech_secs: f64,
 }
 
 impl Default for Silence {
@@ -82,6 +84,7 @@ impl Default for Silence {
             threshold: base.threshold,
             trailing_secs: base.trailing.as_secs_f64(),
             max_secs: base.max_duration.as_secs_f64(),
+            min_speech_secs: base.min_speech.as_secs_f64(),
         }
     }
 }
@@ -92,6 +95,7 @@ impl From<Silence> for SilenceConfig {
             threshold: value.threshold,
             trailing: Duration::from_secs_f64(value.trailing_secs.max(0.0)),
             max_duration: Duration::from_secs_f64(value.max_secs.max(1.0)),
+            min_speech: Duration::from_secs_f64(value.min_speech_secs.max(0.0)),
         }
     }
 }
@@ -275,6 +279,7 @@ mod tests {
             threshold: 1.0,
             trailing_secs: -5.0,
             max_secs: 0.0,
+            min_speech_secs: -1.0,
         }
         .into();
         assert_eq!(

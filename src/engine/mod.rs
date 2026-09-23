@@ -64,12 +64,20 @@ pub fn build(config: &Config, progress: &mut impl Write) -> Result<Box<dyn Engin
 /// Drop what whisper narrates about silence rather than speech.
 ///
 /// The set is open-ended (`[BLANK_AUDIO]`, `[SOUND]`, `[MUSIC]`), so the rule is
-/// shape - square-bracketed, no lowercase - not a list of names.
+/// shape - square-bracketed, no lowercase - not a list of names. A clip with no
+/// word outside brackets (`-`, `[typing]`, `(clicking)`) is noise and yields
+/// nothing, and the dash whisper opens a speaker turn with is removed.
 pub fn strip_non_speech(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(start) = rest.find('[') {
+        out.push_str(&rest[..start]);
         let Some(len) = rest[start..].find(']') else {
+            // An annotation cut off before its close, such as a lone `[`.
+            if rest[start + 1..].chars().any(char::is_lowercase) {
+                out.push_str(&rest[start..]);
+            }
+            rest = "";
             break;
         };
         let end = start + len + 1;
@@ -77,14 +85,36 @@ pub fn strip_non_speech(text: &str) -> String {
         let is_annotation = !inner.is_empty()
             && !inner.chars().any(char::is_lowercase)
             && inner.chars().any(char::is_alphabetic);
-        out.push_str(&rest[..start]);
         if !is_annotation {
             out.push_str(&rest[start..end]);
         }
         rest = &rest[end..];
     }
     out.push_str(rest);
-    out.split_whitespace().collect::<Vec<_>>().join(" ")
+    let text = out.split_whitespace().collect::<Vec<_>>().join(" ");
+    if !has_words(&text) {
+        return String::new();
+    }
+    match text.split_once(' ') {
+        Some((dash, words)) if !dash.is_empty() && dash.chars().all(|c| "-–—".contains(c)) => {
+            words.to_owned()
+        }
+        _ => text,
+    }
+}
+
+/// Whether any letter or digit sits outside brackets and parentheses.
+fn has_words(text: &str) -> bool {
+    let mut depth = 0u32;
+    for c in text.chars() {
+        match c {
+            '[' | '(' => depth += 1,
+            ']' | ')' => depth = depth.saturating_sub(1),
+            c if depth == 0 && c.is_alphanumeric() => return true,
+            _ => {}
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -113,6 +143,32 @@ mod tests {
     #[test]
     fn an_unclosed_bracket_is_left_alone() {
         assert_eq!(strip_non_speech("what [ is this"), "what [ is this");
+    }
+
+    #[test]
+    fn a_cut_off_annotation_is_dropped() {
+        assert_eq!(strip_non_speech(" ["), "");
+        assert_eq!(strip_non_speech("go on [BLANK_AU"), "go on");
+    }
+
+    #[test]
+    fn a_clip_with_no_words_is_noise() {
+        for noise in ["-", " - ", "...", "[typing]", "(keyboard clicking)", "♪"] {
+            assert_eq!(strip_non_speech(noise), "", "{noise:?}");
+        }
+    }
+
+    #[test]
+    fn the_speaker_turn_dash_is_removed() {
+        assert_eq!(strip_non_speech(" - check the VMs"), "check the VMs");
+        assert_eq!(strip_non_speech("– yes"), "yes");
+    }
+
+    #[test]
+    fn a_dash_that_belongs_to_a_word_is_kept() {
+        assert_eq!(strip_non_speech("--verbose please"), "--verbose please");
+        assert_eq!(strip_non_speech("-5 degrees"), "-5 degrees");
+        assert_eq!(strip_non_speech("well - maybe"), "well - maybe");
     }
 
     #[test]

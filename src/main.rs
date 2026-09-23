@@ -219,7 +219,11 @@ fn toggle(submit: bool) -> Result<ExitCode> {
         }
     };
     if text.is_empty() {
-        tracing::info!(secs = recording.duration().as_secs_f64(), "no speech");
+        tracing::info!(
+            secs = recording.duration().as_secs_f64(),
+            stopped_by = ?recording.stopped_by,
+            "no speech"
+        );
         return Ok(ExitCode::SUCCESS);
     }
 

@@ -105,6 +105,7 @@ impl Engine for Bundled {
                 text.push_str(&chunk);
             }
         }
+        tracing::debug!(raw = ?text, "whisper");
         Ok(super::strip_non_speech(&text))
     }
 

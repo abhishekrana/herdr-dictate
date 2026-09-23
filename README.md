@@ -107,6 +107,7 @@ name = "small.en-q8_0"
 threshold = 300.0
 trailing_secs = 2.0
 max_secs = 120.0            # a recording never runs longer than this
+min_speech_secs = 0.2       # unbroken loudness that counts as speech; a key click is shorter
 
 [server]
 enabled = true
