@@ -165,8 +165,8 @@ download by version.
 ## Conventions
 
 - `#![forbid(unsafe_code)]`. Library errors are the `Error` enum in `lib.rs`; `main.rs` uses `anyhow` with context.
-- Failures that cost only a nicety (an indicator, a reload, a server spawn) are logged at debug and swallowed; only a
-  lost transcript is an error.
+- Failures that cost only a nicety (an indicator, a reload, a server spawn) are logged and swallowed; only a lost
+  transcript is an error. An indicator's are warnings, because a dictation that shows nothing reads as a dead key.
 - Tests are inline `#[cfg(test)] mod tests`. Do not add integration tests needing a microphone or a Herdr server.
 - Conventional Commits: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build` reach `CHANGELOG.md`; `ci` and
   `chore(release)` are filtered out.
