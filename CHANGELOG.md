@@ -3,6 +3,24 @@
 Notable changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) spirit and versioned with
 [SemVer](https://semver.org/).
 
+## [0.2.1] - 2026-09-24
+
+### Added
+
+- A remote host shows the dictation, and the log says what was heard (7d03b02)
+
+### Build
+
+- Rustls 0.23.45 for RUSTSEC-2026-0285 (a3cae20)
+
+### Documentation
+
+- Indicator failures are warnings (9542ec0)
+
+### Fixed
+
+- A click no longer ends a dictation, and noise types nothing (d8dd710)
+
 ## [0.2.0] - 2026-09-12
 
 ### Added

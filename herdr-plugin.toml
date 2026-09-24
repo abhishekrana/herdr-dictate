@@ -1,6 +1,6 @@
 id = "abhishekrana.dictate"
 name = "Dictate"
-version = "0.2.0"
+version = "0.2.1"
 min_herdr_version = "0.9.0"
 description = "Local speech-to-text dictation into the focused Herdr pane"
 platforms = ["linux"]
