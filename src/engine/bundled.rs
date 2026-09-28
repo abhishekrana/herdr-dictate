@@ -60,16 +60,10 @@ fn threads(configured: u16) -> i32 {
         .unwrap_or(4)
 }
 
-impl Engine for Bundled {
-    fn transcribe(&mut self, samples: &[i16]) -> Result<String> {
-        if samples.is_empty() {
-            return Ok(String::new());
-        }
-        let mut audio = vec![0.0f32; samples.len()];
-        convert_integer_to_float_audio(samples, &mut audio)
-            .map_err(|e| Error::Model(e.to_string()))?;
-
-        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+impl Bundled {
+    /// One whisper pass, greedy or a beam search, returning its raw text.
+    fn decode(&self, audio: &[f32], strategy: SamplingStrategy) -> Result<String> {
+        let mut params = FullParams::new(strategy);
         params.set_language(Some(&self.language));
         params.set_translate(false);
         params.set_n_threads(self.threads);
@@ -94,7 +88,7 @@ impl Engine for Bundled {
             .create_state()
             .map_err(|e| Error::Model(e.to_string()))?;
         state
-            .full(params, &audio)
+            .full(params, audio)
             .map_err(|e| Error::Model(e.to_string()))?;
 
         let mut text = String::new();
@@ -105,13 +99,42 @@ impl Engine for Bundled {
                 text.push_str(&chunk);
             }
         }
+        Ok(text)
+    }
+}
+
+impl Engine for Bundled {
+    fn transcribe(&mut self, samples: &[i16]) -> Result<String> {
+        if samples.is_empty() {
+            return Ok(String::new());
+        }
+        let mut audio = vec![0.0f32; samples.len()];
+        convert_integer_to_float_audio(samples, &mut audio)
+            .map_err(|e| Error::Model(e.to_string()))?;
+
+        let text = self.decode(&audio, SamplingStrategy::Greedy { best_of: 1 })?;
         tracing::debug!(raw = ?text, "whisper");
         let words = super::strip_non_speech(&text);
-        if words.is_empty() && !text.trim().is_empty() {
-            // Nothing here survived as words, so it is logged by default.
-            tracing::info!(raw = ?text, "whisper heard no words");
+        if !words.is_empty() {
+            return Ok(words);
         }
-        Ok(words)
+        // Nothing in the first pass survived as words, so it is logged by
+        // default; a retry is logged by length, since it may be speech.
+        if !super::claims_speech(&text) {
+            tracing::info!(raw = ?text, "whisper heard no words");
+            return Ok(words);
+        }
+
+        // Greedy decoding can confidently collapse a clip of speech into a
+        // lone `-`, past whisper's temperature fallback; a beam search recovers
+        // it. Only then, because on silence a beam search invents words.
+        let beam = SamplingStrategy::BeamSearch {
+            beam_size: 5,
+            patience: -1.0,
+        };
+        let retried = super::strip_non_speech(&self.decode(&audio, beam)?);
+        tracing::info!(raw = ?text, chars = retried.len(), "whisper heard no words; retried");
+        Ok(retried)
     }
 
     fn describe(&self) -> String {

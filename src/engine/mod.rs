@@ -66,7 +66,7 @@ pub fn build(config: &Config, progress: &mut impl Write) -> Result<Box<dyn Engin
 /// The set is open-ended (`[BLANK_AUDIO]`, `[SOUND]`, `[MUSIC]`), so the rule is
 /// shape - square-bracketed, no lowercase - not a list of names. A clip with no
 /// word outside brackets (`-`, `[typing]`, `(clicking)`) is noise and yields
-/// nothing, and the dash whisper opens a speaker turn with is removed.
+/// nothing, and the dashes and dots whisper opens a speaker turn with are removed.
 pub fn strip_non_speech(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
@@ -95,12 +95,19 @@ pub fn strip_non_speech(text: &str) -> String {
     if !has_words(&text) {
         return String::new();
     }
-    match text.split_once(' ') {
-        Some((dash, words)) if !dash.is_empty() && dash.chars().all(|c| "-–—".contains(c)) => {
-            words.to_owned()
-        }
-        _ => text,
+    let mut words = text.as_str();
+    while let Some((lead, rest)) = words.split_once(' ')
+        && lead.chars().all(|c| "-–—.".contains(c))
+    {
+        words = rest;
     }
+    words.to_owned()
+}
+
+/// Whether a wordless transcript still claims speech: text with no bracket or
+/// parenthesis, which is how whisper labels silence and noise.
+pub fn claims_speech(raw: &str) -> bool {
+    !raw.trim().is_empty() && !raw.contains(['[', '('])
 }
 
 /// Whether any letter or digit sits outside brackets and parentheses.
@@ -120,6 +127,27 @@ fn has_words(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_lone_dash_claims_speech() {
+        assert!(claims_speech("-"));
+        assert!(claims_speech(" - "));
+    }
+
+    #[test]
+    fn silence_and_noise_labels_do_not_claim_speech() {
+        for raw in [
+            "",
+            "  ",
+            " [BLANK_AUDIO]",
+            " [",
+            " [Music]",
+            " [T",
+            "(clicking)",
+        ] {
+            assert!(!claims_speech(raw), "{raw:?}");
+        }
+    }
 
     #[test]
     fn annotations_are_dropped() {
@@ -162,6 +190,8 @@ mod tests {
     fn the_speaker_turn_dash_is_removed() {
         assert_eq!(strip_non_speech(" - check the VMs"), "check the VMs");
         assert_eq!(strip_non_speech("– yes"), "yes");
+        assert_eq!(strip_non_speech(" . Now test it"), "Now test it");
+        assert_eq!(strip_non_speech("- . go"), "go");
     }
 
     #[test]
