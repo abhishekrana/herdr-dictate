@@ -27,8 +27,10 @@ RUN mkdir -p src \
     && cargo build --release --locked --features vulkan \
     && rm -rf src
 
-# Only the crate: docs and scripts do not affect the build.
+# Only the crate: docs and scripts do not affect the build. The copied sources
+# can be older than the stub's build, which cargo would take as up to date.
 COPY src/ src/
+RUN touch src/main.rs src/lib.rs
 
 RUN cargo build --release --locked
 RUN cargo build --release --locked --features vulkan
