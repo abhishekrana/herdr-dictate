@@ -95,6 +95,10 @@ Optional, at `config.toml` in `herdr plugin config-dir abhishekrana.dictate`:
 [engine.model]
 name = "small.en-q8_0"       # tiny.en, base.en, base.en-q8_0, small.en-q8_0, small.en
 
+[[engine.replace]]           # a word the model keeps getting wrong
+from = "work tree"
+to = "worktree"
+
 [silence]
 threshold = 300.0            # how loud audio must be to count as speech
 trailing_secs = 2.0          # seconds of silence that end a recording; 0 to never stop on its own
@@ -104,6 +108,11 @@ Models download on first use and are checked against a known hash. The default, 
 252 MB; `tiny.en` is 74 MB and noticeably worse. A `q8_0` model is a compressed build of the same
 size class - half the download, faster, and no accuracy difference observed.
 
+Each `[[engine.replace]]` entry rewrites `from` to `to` wherever `from` is a whole word or phrase,
+after the model has answered. A lowercase `from` matches any casing; one with a capital matches only
+as written, so `Herder` leaves the ordinary word alone. A match at a sentence start keeps its capital.
+Add an entry when a term comes out wrong, as it comes out.
+
 <details>
 <summary>Every setting, with defaults</summary>
 
@@ -112,6 +121,7 @@ size class - half the download, faster, and no accuracy difference observed.
 language = "en"
 threads = 0                  # CPU threads; 0 lets transcribe.cpp choose, at most 8
 prompt = "Terms: worktree, kubectl, herdr."   # biases the vocabulary
+replace = []                 # [[engine.replace]] entries, as above
 
 [engine.model]
 name = "small.en-q8_0"

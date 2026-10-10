@@ -4,6 +4,7 @@
 //! rather than a change to anything that calls it.
 
 pub mod bundled;
+pub mod replace;
 
 use std::io::Write;
 
@@ -42,6 +43,8 @@ pub struct Config {
     /// CPU threads. Zero lets transcribe.cpp choose, which caps it at eight:
     /// one per core oversubscribes a busy machine and multiplies the wait.
     pub threads: u16,
+    /// Words rewritten in every transcript, `[[engine.replace]]` in the file.
+    pub replace: Vec<replace::Replacement>,
 }
 
 impl Default for Config {
@@ -52,6 +55,7 @@ impl Default for Config {
             language: "en".into(),
             prompt: None,
             threads: 0,
+            replace: Vec::new(),
         }
     }
 }

@@ -58,7 +58,7 @@ daemon; the only long-lived process is the optional model server.
   the prompt, a no-speech gate, `strip_non_speech` and the retry: transcribe.cpp suppresses whisper's silence labels,
   so without the gate noise comes out as "Thank you.". `strip_non_speech` drops annotations by *shape* (bracketed, no
   lowercase), not a name list. Every family collapses whitespace, which stops a dictated newline from submitting a
-  prompt.
+  prompt. `engine::replace` then applies the user's `[[engine.replace]]` table, whole words only, in one pass.
   transcribe.cpp's diagnostics reach `tracing` through the `log` facade under the `transcribe_cpp` target, filtered
   to warnings by default. `threads = 0` leaves the count to transcribe.cpp (at most 8): one per core oversubscribes a
   busy machine and quadrupled the wait when measured.

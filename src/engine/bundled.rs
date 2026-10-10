@@ -6,6 +6,7 @@ use std::sync::Once;
 
 use transcribe_cpp::{Model, RunExtension, RunOptions, Session, SessionOptions, WhisperRunOptions};
 
+use super::replace::{self, Replacement};
 use super::{Config, Engine};
 use crate::{Error, Result, model};
 
@@ -23,6 +24,7 @@ pub struct Bundled {
     session: Session,
     family: Family,
     language: String,
+    replacements: Vec<Replacement>,
     description: String,
 }
 
@@ -75,6 +77,7 @@ impl Bundled {
             session,
             family,
             language: config.language.clone(),
+            replacements: config.replace.clone(),
             description,
         })
     }
@@ -171,7 +174,7 @@ impl Engine for Bundled {
                 .collect::<Vec<_>>()
                 .join(" "),
         };
-        Ok(text)
+        Ok(replace::apply(&self.replacements, &text))
     }
 
     fn describe(&self) -> String {
