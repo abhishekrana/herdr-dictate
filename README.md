@@ -19,9 +19,10 @@ the transcript is typed where you were looking.
 
 ![talking to Claude Code through Herdr](assets/demo.gif)
 
-Audio never leaves the machine. whisper.cpp is compiled in, the model is downloaded and verified by
-the plugin, and the model server is this same binary - there is no sidecar to install and nothing to
-run yourself. A GPU is used automatically when one is present.
+Audio never leaves the machine. [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) is
+compiled in, the model is downloaded and verified by the plugin, and the model server is this same
+binary - there is no sidecar to install and nothing to run yourself. A GPU is used automatically when
+one is present, and the CPU otherwise.
 
 ## Install
 
@@ -34,9 +35,24 @@ Herdr plugins cannot register their own keys, so `setup` offers to add them: `pr
 `prefix+shift+v` dictates and submits. It backs up `config.toml` and appends rather than rewriting,
 so comments survive.
 
-Installing downloads a prebuilt binary when one fits this machine, and compiles otherwise. To
-compile, run `scripts/install-deps.sh` first (Debian and Ubuntu) for the build tools and the audio
-and GPU headers.
+Installing downloads a prebuilt binary when one fits this machine, and compiles otherwise.
+
+### Requirements for compiling
+
+`scripts/install-deps.sh` installs these on Debian and Ubuntu.
+
+| what | Debian and Ubuntu package | for |
+| ---- | ------------------------- | --- |
+| Rust 1.88 or newer | [rustup](https://rustup.rs) | everything |
+| a C and C++ compiler, CMake, pkg-config | `build-essential`, `cmake`, `pkg-config` | transcribe.cpp |
+| ALSA headers | `libasound2-dev` | the microphone |
+| Vulkan headers and loader, `glslc` | `libvulkan-dev`, `glslc` | the GPU build |
+| SPIRV-Headers | `spirv-headers` | the GPU build |
+| OpenBLAS, optional | `libopenblas-dev` | the CPU decoder; linked when present |
+
+Without the three GPU rows the build runs on the CPU only. OpenBLAS made no measurable difference to
+dictation-length clips, on the GPU or the CPU, so the script leaves it out; install it yourself to
+try it.
 
 ## Usage
 
@@ -94,13 +110,13 @@ size class - half the download, faster, and no accuracy difference observed.
 ```toml
 [engine]
 language = "en"
-threads = 0                  # 0 = one per core
+threads = 0                  # CPU threads; 0 lets transcribe.cpp choose, at most 8
 prompt = "Terms: worktree, kubectl, herdr."   # biases the vocabulary
 
 [engine.model]
 name = "small.en-q8_0"
 # path = "/models/ggml-medium.en.bin"      # a local file, used as-is
-# url = "https://.../ggml-large-v3.bin"    # any ggml model
+# url = "https://.../ggml-large-v3.bin"    # any model transcribe.cpp runs
 # sha256 = "..."                           # required with url
 
 [silence]

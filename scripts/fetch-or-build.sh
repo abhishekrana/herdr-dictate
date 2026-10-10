@@ -13,7 +13,7 @@ out=target/release/herdr-dictate
 # Build with the GPU backend when this machine can, since that is roughly eight
 # times faster; otherwise plain, which builds anywhere.
 build() {
-    if pkg-config --exists vulkan 2>/dev/null && command -v glslc >/dev/null 2>&1; then
+    if pkg-config --exists vulkan SPIRV-Headers 2>/dev/null && command -v glslc >/dev/null 2>&1; then
         echo "building from source, with the vulkan backend"
         exec cargo build --release --locked --features vulkan
     fi

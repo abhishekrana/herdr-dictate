@@ -6,7 +6,7 @@ rust-version = "1.88"
 license = "MIT"
 description = "Local speech-to-text dictation into the focused Herdr pane"
 repository = "https://github.com/abhishekrana/herdr-dictate"
-keywords = ["herdr", "dictation", "speech-to-text", "whisper"]
+keywords = ["herdr", "dictation", "speech-to-text", "parakeet", "whisper"]
 categories = ["command-line-utilities"]
 
 [lib]
@@ -21,13 +21,10 @@ path = "src/main.rs"
 default = []
 # Acceleration for the bundled engine. CPU works everywhere; each of these needs
 # its own SDK at build time, so release binaries ship one variant per backend.
-#
-# whisper-rs does not forward whisper-rs-sys's vulkan feature, so it is enabled
-# on the sys crate directly. The version must match whisper-rs's own dependency.
-vulkan = ["dep:whisper-rs-sys", "whisper-rs-sys/vulkan"]
-cuda = ["whisper-rs/cuda"]
-metal = ["whisper-rs/metal"]
-hipblas = ["whisper-rs/hipblas"]
+vulkan = ["transcribe-cpp/vulkan"]
+cuda = ["transcribe-cpp/cuda"]
+metal = ["transcribe-cpp/metal"]
+rocm = ["transcribe-cpp/rocm"]
 
 [dependencies]
 anyhow = "1"
@@ -39,8 +36,8 @@ sha2 = "0.11"
 signal-hook = "0.4"
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 thiserror = "2"
-whisper-rs = "0.16"
-whisper-rs-sys = { version = "0.15", optional = true }
+# Its default turns on Metal; the features above choose the backend.
+transcribe-cpp = { version = "0.3.1", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1"
@@ -52,6 +49,5 @@ tempfile = "3"
 
 [profile.release]
 strip = true
-# No LTO: the work is in whisper.cpp, which it does not reach. Measured, it
-# costs most of the build and returns nothing.
+# No LTO: the work is in transcribe.cpp, which it does not reach.
 lto = false

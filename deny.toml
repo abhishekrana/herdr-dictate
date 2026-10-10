@@ -5,7 +5,7 @@
 yanked = "deny"
 
 [licenses]
-# Permissive licences only. whisper.cpp and ggml are MIT, as is this crate.
+# Permissive licences only. transcribe.cpp and ggml are MIT, as is this crate.
 allow = [
   "0BSD",
   "Apache-2.0",
@@ -21,8 +21,6 @@ allow = [
   "MIT-0",
   "MPL-2.0",
   "Unicode-3.0",
-  # Public domain dedication: whisper-rs and whisper-rs-sys.
-  "Unlicense",
   "Zlib",
 ]
 confidence-threshold = 0.9

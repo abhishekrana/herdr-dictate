@@ -5,8 +5,8 @@ Guidance for Claude Code working in this repository.
 ## What this is
 
 A [Herdr](https://herdr.dev) plugin: local speech-to-text dictation into the focused pane. One Rust crate, one binary,
-no sidecar — whisper.cpp is compiled in, the model is downloaded and verified by this code, and the model server is
-this same binary. Linux only (macOS needs a resampler). Audio never leaves the machine.
+no sidecar — transcribe.cpp is compiled in, the model is downloaded and verified by this code, and the model server
+is this same binary. Linux only (macOS needs a resampler). Audio never leaves the machine.
 
 ## Commands
 
@@ -28,9 +28,11 @@ scripts/install-deps.sh        # build deps, Debian/Ubuntu
 scripts/install-dev-tools.sh   # cargo-deny, git-cliff, MSRV toolchain; pinned in scripts/versions.env
 ```
 
-Acceleration features (`vulkan`, `cuda`, `metal`, `hipblas`) are mutually exclusive — never `--all-features`. One
-Vulkan build serves AMD, Intel and NVIDIA. `vulkan` is wired to `whisper-rs-sys` directly because `whisper-rs` does
-not forward it. `lto` is off: the work is in whisper.cpp, which it does not reach.
+Acceleration features (`vulkan`, `cuda`, `metal`, `rocm`) are mutually exclusive — never `--all-features`. One
+Vulkan build serves AMD, Intel and NVIDIA; it needs `spirv-headers` as well as the Vulkan headers, and
+`fetch-or-build.sh` and `deploy.sh` build for the CPU when either is missing. `lto` is off: the work is in
+transcribe.cpp, which it does not reach. `scripts/check.sh` builds for the CPU only; the Docker step and
+`release.yml` build `--features vulkan`.
 
 `doctor`, `record --out FILE`, `transcribe FILE` (16 kHz mono WAV) and `setup --print` run outside Herdr; `toggle` and
 `deliver` need a live socket. `HERDR_DICTATE_LOG=debug` raises the level; all logging goes to stderr, which Herdr
@@ -51,9 +53,15 @@ daemon; the only long-lived process is the optional model server.
   arrives with none); `ipc::Client::focused_pane` then asks the server.
 - `capture` → `audio` — `capture` is the single platform boundary (cpal/ALSA), opened at 16 kHz mono so nothing
   resamples. `audio` is pure functions over buffers, which is where recording-end decisions are tested.
-- `engine` — the `Engine` trait plus `engine::build`; `engine::bundled` is whisper.cpp. `strip_non_speech` drops
-  whisper's annotations by *shape* (bracketed, no lowercase), not a name list, and collapses whitespace — which also
-  stops a dictated newline from submitting a prompt.
+- `engine` — the `Engine` trait plus `engine::build`; `engine::bundled` is transcribe.cpp, and the loaded model's
+  architecture picks its `Family`. Parakeet takes the text as decoded. Whisper takes
+  the prompt, a no-speech gate, `strip_non_speech` and the retry: transcribe.cpp suppresses whisper's silence labels,
+  so without the gate noise comes out as "Thank you.". `strip_non_speech` drops annotations by *shape* (bracketed, no
+  lowercase), not a name list. Every family collapses whitespace, which stops a dictated newline from submitting a
+  prompt.
+  transcribe.cpp's diagnostics reach `tracing` through the `log` facade under the `transcribe_cpp` target, filtered
+  to warnings by default. `threads = 0` leaves the count to transcribe.cpp (at most 8): one per core oversubscribes a
+  busy machine and quadrupled the wait when measured.
 - `model` — a model is named three ways (`name` / `path` / `url` + `sha256`), so an unknown model needs no code
   change. Downloads land in `.part` and are renamed only after the digest matches.
 - `server` — holds the engine resident between presses. Spawned lazily and **after** delivering, so two copies never

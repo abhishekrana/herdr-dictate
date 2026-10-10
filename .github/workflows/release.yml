@@ -33,9 +33,17 @@ jobs:
           SKIP_DOCKER: "1"
 
       # The GPU build runs on the CPU when no GPU is present, so one artifact
-      # serves both. It needs libvulkan1 at runtime.
+      # serves both. It needs libvulkan1 at runtime, and nothing else a user
+      # might lack: OpenBLAS is kept out even when the runner has it.
       - name: Build
         run: cargo build --release --locked --features vulkan
+        env:
+          TRANSCRIBE_CMAKE_ARGS: -DTRANSCRIBE_USE_SYSTEM_BLAS=OFF
+
+      - name: Check runtime libraries
+        run: |
+          ldd target/release/herdr-dictate
+          ! ldd target/release/herdr-dictate | grep -i blas
 
       - name: Package
         run: |

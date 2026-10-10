@@ -1,118 +1,107 @@
-//! whisper.cpp, compiled in.
+//! transcribe.cpp, compiled in. The model file decides the family: Parakeet,
+//! Whisper, or any other family transcribe.cpp runs.
 
 use std::io::Write;
 use std::sync::Once;
 
-use whisper_rs::{
-    FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters,
-    convert_integer_to_float_audio,
-};
+use transcribe_cpp::{Model, RunExtension, RunOptions, Session, SessionOptions, WhisperRunOptions};
 
 use super::{Config, Engine};
 use crate::{Error, Result, model};
 
-/// whisper.cpp writes to stderr unless its log is redirected, and plugin stderr
-/// is what Herdr shows the user.
+/// Native and ggml diagnostics go through the `log` facade, which the binary's
+/// subscriber filters, rather than straight to stderr.
 static LOGGING: Once = Once::new();
 
+/// Fixed so the sampled retry answers the same way for the same clip.
+const RETRY_SEED: u32 = 1;
+
+/// Whisper's no-speech probability above which a clip is noise.
+const NO_SPEECH: f32 = 0.3;
+
 pub struct Bundled {
-    context: WhisperContext,
-    model: String,
+    session: Session,
+    family: Family,
     language: String,
-    prompt: Option<String>,
-    threads: i32,
+    description: String,
+}
+
+/// What a model's family needs around a decode.
+enum Family {
+    /// A prompt, a no-speech gate, and a retry when a clip collapses to a
+    /// wordless mark.
+    Whisper(WhisperRunOptions),
+    /// Parakeet and every other family: the text as decoded.
+    Plain,
 }
 
 impl Bundled {
     pub fn load(config: &Config, progress: &mut impl Write) -> Result<Self> {
-        LOGGING.call_once(whisper_rs::install_logging_hooks);
+        LOGGING.call_once(transcribe_cpp::init_logging);
 
         let source = config.model.resolve(&model::cache_dir()?)?;
         let path = model::ensure(&source, progress)?;
-        // whisper-rs derives use_gpu from its own `_gpu` feature, which the
-        // vulkan backend does not set, so it is asked for explicitly. With no
-        // GPU backend compiled in, whisper.cpp ignores it.
-        let mut parameters = WhisperContextParameters::default();
-        parameters.use_gpu(true);
-        let context = WhisperContext::new_with_params(&path, parameters)
+        // The default backend request takes the best device present and falls
+        // back to the CPU.
+        let loaded = Model::load(&path)
             .map_err(|e| Error::Model(format!("loading {}: {e}", path.display())))?;
+        let session = loaded
+            .session_with(&SessionOptions {
+                n_threads: config.threads.into(),
+                ..SessionOptions::default()
+            })
+            .map_err(|e| Error::Model(e.to_string()))?;
+
+        let arch = loaded.arch();
+        let family = if arch == "whisper" {
+            Family::Whisper(whisper_options(config.prompt.clone()))
+        } else {
+            if config.prompt.is_some() {
+                tracing::warn!(arch, "the prompt is unused: only a whisper model takes one");
+            }
+            Family::Plain
+        };
+        let threads = match config.threads {
+            0 => "default".to_owned(),
+            n => n.to_string(),
+        };
+        let description = format!(
+            "bundled transcribe.cpp, {arch} model {}, {} backend, {threads} threads",
+            path.file_name().unwrap_or_default().to_string_lossy(),
+            loaded.backend(),
+        );
 
         Ok(Self {
-            context,
-            model: path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned(),
+            session,
+            family,
             language: config.language.clone(),
-            prompt: config.prompt.clone(),
-            threads: threads(config.threads),
+            description,
         })
     }
-}
 
-fn threads(configured: u16) -> i32 {
-    if configured > 0 {
-        return configured.into();
-    }
-    std::thread::available_parallelism()
-        .map(|n| n.get() as i32)
-        .unwrap_or(4)
-}
-
-impl Bundled {
-    /// One whisper pass, greedy or a beam search, returning its raw text.
-    fn decode(&self, audio: &[f32], strategy: SamplingStrategy) -> Result<String> {
-        let mut params = FullParams::new(strategy);
-        params.set_language(Some(&self.language));
-        params.set_translate(false);
-        params.set_n_threads(self.threads);
-        params.set_suppress_blank(true);
-        // whisper.cpp otherwise retries a low-confidence window at rising
-        // temperatures, several times over. Dictation wants the first answer.
-        params.set_temperature_inc(0.0);
-        params.set_token_timestamps(false);
-        // Each dictation stands alone; carrying context across them lets one
-        // clip's words bias the next.
-        params.set_no_context(true);
-        params.set_print_special(false);
-        params.set_print_progress(false);
-        params.set_print_realtime(false);
-        params.set_print_timestamps(false);
-        if let Some(prompt) = &self.prompt {
-            params.set_initial_prompt(prompt);
-        }
-
-        let mut state = self
-            .context
-            .create_state()
-            .map_err(|e| Error::Model(e.to_string()))?;
-        state
-            .full(params, audio)
-            .map_err(|e| Error::Model(e.to_string()))?;
-
-        let mut text = String::new();
-        for i in 0..state.full_n_segments() {
-            if let Some(segment) = state.get_segment(i)
-                && let Ok(chunk) = segment.to_str_lossy()
-            {
-                text.push_str(&chunk);
+    /// One pass over `audio`, returning its raw text.
+    fn decode(&mut self, audio: &[f32], whisper: Option<WhisperRunOptions>) -> Result<String> {
+        let options = RunOptions {
+            language: Some(self.language.clone()),
+            family: whisper.map(RunExtension::Whisper),
+            ..RunOptions::default()
+        };
+        match self.session.run(audio, &options) {
+            Ok(transcript) => Ok(transcript.text),
+            // A decode cut short at its budget or by repetition keeps what it
+            // heard before that, which beats losing the dictation.
+            Err(err) if err.partial().is_some() => {
+                tracing::warn!(%err, "decode stopped early; keeping its partial text");
+                Ok(err.partial().map(|t| t.text.clone()).unwrap_or_default())
             }
+            Err(err) => Err(Error::Model(err.to_string())),
         }
-        Ok(text)
     }
-}
 
-impl Engine for Bundled {
-    fn transcribe(&mut self, samples: &[i16]) -> Result<String> {
-        if samples.is_empty() {
-            return Ok(String::new());
-        }
-        let mut audio = vec![0.0f32; samples.len()];
-        convert_integer_to_float_audio(samples, &mut audio)
-            .map_err(|e| Error::Model(e.to_string()))?;
-
-        let text = self.decode(&audio, SamplingStrategy::Greedy { best_of: 1 })?;
+    /// Whisper's pass, and its retry when the first pass claimed speech but
+    /// carried no words.
+    fn transcribe_whisper(&mut self, audio: &[f32], first: WhisperRunOptions) -> Result<String> {
+        let text = self.decode(audio, Some(first.clone()))?;
         tracing::debug!(raw = ?text, "whisper");
         let words = super::strip_non_speech(&text);
         if !words.is_empty() {
@@ -126,32 +115,66 @@ impl Engine for Bundled {
         }
 
         // Greedy decoding can confidently collapse a clip of speech into a
-        // lone `-`, past whisper's temperature fallback; a beam search recovers
-        // it. Only then, because on silence a beam search invents words.
-        let beam = SamplingStrategy::BeamSearch {
-            beam_size: 5,
-            patience: -1.0,
+        // lone `-`, past whisper's fallback thresholds; a seeded sampled pass
+        // decodes it afresh. Only then, because on silence sampling invents
+        // words.
+        let retry = WhisperRunOptions {
+            temperature: Some(0.2),
+            seed: Some(RETRY_SEED),
+            ..first
         };
-        let retried = super::strip_non_speech(&self.decode(&audio, beam)?);
+        let retried = super::strip_non_speech(&self.decode(audio, Some(retry))?);
         tracing::info!(raw = ?text, chars = retried.len(), "whisper heard no words; retried");
         Ok(retried)
     }
+}
 
-    fn describe(&self) -> String {
-        format!(
-            "bundled whisper.cpp, model {}, {} threads",
-            self.model, self.threads
-        )
+/// Whisper's first pass.
+fn whisper_options(prompt: Option<String>) -> WhisperRunOptions {
+    WhisperRunOptions {
+        initial_prompt: prompt,
+        // Each dictation stands alone; carrying context across chunks lets
+        // one stretch's words bias the next.
+        condition_on_prev_tokens: Some(false),
+        // Dictation wants the first answer, not a ladder of retries at rising
+        // temperatures.
+        temperature_inc: Some(0.0),
+        // transcribe.cpp suppresses the labels whisper gives silence and
+        // noise, so it answers them with stock phrases ("Thank you.") instead.
+        // The no-speech probability alone gates them: measured noise scores
+        // above 0.4 and short commands below 0.15. Every average
+        // log-probability is below zero, so a zero threshold leaves the gate
+        // to the no-speech probability.
+        no_speech_thold: Some(NO_SPEECH),
+        logprob_thold: Some(0.0),
+        ..WhisperRunOptions::default()
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+impl Engine for Bundled {
+    fn transcribe(&mut self, samples: &[i16]) -> Result<String> {
+        if samples.is_empty() {
+            return Ok(String::new());
+        }
+        let audio: Vec<f32> = samples.iter().map(|&s| f32::from(s) / 32768.0).collect();
 
-    #[test]
-    fn zero_threads_means_one_per_core() {
-        assert!(threads(0) >= 1);
-        assert_eq!(threads(3), 3);
+        let text = match &self.family {
+            Family::Whisper(options) => {
+                let options = options.clone();
+                self.transcribe_whisper(&audio, options)?
+            }
+            // Collapsing whitespace also keeps a dictated newline from
+            // submitting a prompt.
+            Family::Plain => self
+                .decode(&audio, None)?
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" "),
+        };
+        Ok(text)
+    }
+
+    fn describe(&self) -> String {
+        self.description.clone()
     }
 }

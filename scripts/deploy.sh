@@ -18,7 +18,7 @@ git fetch --quiet
 }
 
 # The GPU build wherever the toolchain allows it, matching what an install does.
-if pkg-config --exists vulkan 2>/dev/null && command -v glslc >/dev/null 2>&1; then
+if pkg-config --exists vulkan SPIRV-Headers 2>/dev/null && command -v glslc >/dev/null 2>&1; then
     cargo build --release --locked --features vulkan
 else
     cargo build --release --locked

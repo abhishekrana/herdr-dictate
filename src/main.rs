@@ -73,7 +73,8 @@ fn main() -> ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_env("HERDR_DICTATE_LOG")
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+                // transcribe.cpp narrates every load and decode at info.
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,transcribe_cpp=warn")),
         )
         .with_writer(std::io::stderr)
         // Herdr's plugin log and the server's log file are read as plain text.

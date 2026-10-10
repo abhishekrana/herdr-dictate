@@ -23,7 +23,7 @@ pub trait Engine: Send {
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
-    /// whisper.cpp, compiled in.
+    /// transcribe.cpp, compiled in.
     #[default]
     Bundled,
 }
@@ -34,11 +34,13 @@ pub struct Config {
     pub kind: Kind,
     pub model: ModelRef,
     pub language: String,
-    /// Text the model treats as preceding the clip, biasing its vocabulary.
-    /// Listed terms come out right; terms absent from it are likelier to be
-    /// mis-heard, so this cuts both ways and is best changed by measurement.
+    /// Text a whisper model treats as preceding the clip, biasing its
+    /// vocabulary. Listed terms come out right; terms absent from it are
+    /// likelier to be mis-heard, so this cuts both ways and is best changed by
+    /// measurement. Other families take no prompt.
     pub prompt: Option<String>,
-    /// Zero means one thread per core.
+    /// CPU threads. Zero lets transcribe.cpp choose, which caps it at eight:
+    /// one per core oversubscribes a busy machine and multiplies the wait.
     pub threads: u16,
 }
 

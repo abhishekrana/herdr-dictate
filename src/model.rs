@@ -71,7 +71,8 @@ pub struct ModelRef {
     /// A model file already on disk. Nothing is downloaded or verified.
     #[serde(default)]
     pub path: Option<PathBuf>,
-    /// Any ggml model. Requires `sha256`.
+    /// Any model transcribe.cpp loads, GGUF or whisper.cpp's ggml. Requires
+    /// `sha256`.
     #[serde(default)]
     pub url: Option<String>,
     #[serde(default)]

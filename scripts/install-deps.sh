@@ -1,5 +1,8 @@
 #!/bin/sh
 # Build dependencies for Debian and Ubuntu.
+#
+# libopenblas-dev is optional: a source build links it when present, and on
+# dictation-length clips it made no measurable difference.
 set -eu
 
 SUDO=sudo
@@ -11,6 +14,6 @@ $SUDO apt-get install -y --no-install-recommends \
     cmake \
     glslc \
     libasound2-dev \
-    libclang-dev \
     libvulkan-dev \
-    pkg-config
+    pkg-config \
+    spirv-headers
