@@ -54,7 +54,7 @@ daemon; the only long-lived process is the optional model server.
 - `capture` → `audio` — `capture` is the single platform boundary (cpal/ALSA), opened at 16 kHz mono so nothing
   resamples. `audio` is pure functions over buffers, which is where recording-end decisions are tested.
 - `engine` — the `Engine` trait plus `engine::build`; `engine::bundled` is transcribe.cpp, and the loaded model's
-  architecture picks its `Family`. Parakeet takes the text as decoded. Whisper takes
+  architecture picks its `Family`. Parakeet (the default, `parakeet-ultra`) takes the text as decoded. Whisper takes
   the prompt, a no-speech gate, `strip_non_speech` and the retry: transcribe.cpp suppresses whisper's silence labels,
   so without the gate noise comes out as "Thank you.". `strip_non_speech` drops annotations by *shape* (bracketed, no
   lowercase), not a name list. Every family collapses whitespace, which stops a dictated newline from submitting a

@@ -23,8 +23,15 @@ pub struct ModelSpec {
 /// Models this crate knows by name. Digests are from the publisher's index.
 ///
 /// `q8_0` variants are quantised: about half the download and faster, at a
-/// small accuracy cost.
+/// small accuracy cost. `parakeet-ultra` is the Q8_0 build, pinned to the
+/// publisher's revision.
 pub const BUILTIN: &[ModelSpec] = &[
+    ModelSpec {
+        name: "parakeet-ultra",
+        url: "https://huggingface.co/handy-computer/parakeet-ultra-gguf/resolve/39eeb55181f0d354fd934f06e92fd8d5037fed8e/parakeet-ultra-Q8_0.gguf",
+        sha256: "007a59761e9258779f189df396b50d12b83bb5b79e66df4b955c230d2f2a0a59",
+        size_bytes: 740_363_168,
+    },
     ModelSpec {
         name: "tiny.en",
         url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin",
@@ -57,6 +64,13 @@ pub const BUILTIN: &[ModelSpec] = &[
     },
 ];
 
+impl ModelSpec {
+    /// The file name the model is cached under: the last segment of its url.
+    pub fn file_name(&self) -> &'static str {
+        self.url.rsplit('/').next().unwrap_or(self.name)
+    }
+}
+
 pub fn builtin(name: &str) -> Option<&'static ModelSpec> {
     BUILTIN.iter().find(|m| m.name == name)
 }
@@ -65,7 +79,7 @@ pub fn builtin(name: &str) -> Option<&'static ModelSpec> {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ModelRef {
-    /// A built-in name, such as `base.en`.
+    /// A built-in name, such as `parakeet-ultra` or `small.en-q8_0`.
     #[serde(default)]
     pub name: Option<String>,
     /// A model file already on disk. Nothing is downloaded or verified.
@@ -82,7 +96,7 @@ pub struct ModelRef {
 impl Default for ModelRef {
     fn default() -> Self {
         Self {
-            name: Some("small.en-q8_0".into()),
+            name: Some("parakeet-ultra".into()),
             path: None,
             url: None,
             sha256: None,
@@ -128,7 +142,7 @@ impl ModelRef {
                 Ok(Source::Download {
                     url: spec.url.into(),
                     sha256: spec.sha256.into(),
-                    cached_as: cache_dir.join(format!("ggml-{}.bin", spec.name)),
+                    cached_as: cache_dir.join(spec.file_name()),
                 })
             }
             (None, None, None) => Self::default().resolve(cache_dir),
@@ -237,6 +251,17 @@ mod tests {
     }
 
     #[test]
+    fn whisper_builtins_keep_their_cached_file_name() {
+        for spec in BUILTIN.iter().filter(|m| m.url.contains("whisper.cpp")) {
+            assert_eq!(spec.file_name(), format!("ggml-{}.bin", spec.name));
+        }
+        assert_eq!(
+            builtin("parakeet-ultra").unwrap().file_name(),
+            "parakeet-ultra-Q8_0.gguf"
+        );
+    }
+
+    #[test]
     fn builtin_names_are_unique() {
         let mut names: Vec<&str> = BUILTIN.iter().map(|m| m.name).collect();
         names.sort_unstable();
@@ -262,11 +287,13 @@ mod tests {
     }
 
     #[test]
-    fn the_default_is_a_known_builtin() {
-        assert!(matches!(
-            ModelRef::default().resolve(&cache()),
-            Ok(Source::Download { .. })
-        ));
+    fn the_default_is_parakeet_ultra() {
+        match ModelRef::default().resolve(&cache()).unwrap() {
+            Source::Download { cached_as, .. } => {
+                assert_eq!(cached_as, cache().join("parakeet-ultra-Q8_0.gguf"));
+            }
+            other => panic!("expected a download, got {other:?}"),
+        }
     }
 
     #[test]

@@ -22,7 +22,8 @@ the transcript is typed where you were looking.
 Audio never leaves the machine. [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) is
 compiled in, the model is downloaded and verified by the plugin, and the model server is this same
 binary - there is no sidecar to install and nothing to run yourself. A GPU is used automatically when
-one is present, and the CPU otherwise.
+one is present, and the CPU otherwise. The default model is Parakeet; Whisper models remain a setting
+away.
 
 ## Install
 
@@ -93,7 +94,7 @@ Optional, at `config.toml` in `herdr plugin config-dir abhishekrana.dictate`:
 
 ```toml
 [engine.model]
-name = "small.en-q8_0"       # tiny.en, base.en, base.en-q8_0, small.en-q8_0, small.en
+name = "parakeet-ultra"      # or a Whisper model: tiny.en, base.en, base.en-q8_0, small.en-q8_0, small.en
 
 [[engine.replace]]           # a word the model keeps getting wrong
 from = "work tree"
@@ -104,14 +105,22 @@ threshold = 300.0            # how loud audio must be to count as speech
 trailing_secs = 2.0          # seconds of silence that end a recording; 0 to never stop on its own
 ```
 
-Models download on first use and are checked against a known hash. The default, `small.en-q8_0`, is
-252 MB; `tiny.en` is 74 MB and noticeably worse. A `q8_0` model is a compressed build of the same
-size class - half the download, faster, and no accuracy difference observed.
+Models download on first use and are checked against a known hash. The default, `parakeet-ultra`,
+is 706 MB: [Moondream's post-trained Parakeet](https://huggingface.co/moondream/parakeet-ultra)
+(CC-BY-4.0), in [the Q8_0 GGUF build](https://huggingface.co/handy-computer/parakeet-ultra-gguf).
+Its wait after you stop talking grows with what you said: on an integrated GPU a short command came
+back in about 0.2 s and a sentence in 0.4 s, where `small.en-q8_0` took about a second either way. On
+silence and noise it writes nothing.
 
-Each `[[engine.replace]]` entry rewrites `from` to `to` wherever `from` is a whole word or phrase,
-after the model has answered. A lowercase `from` matches any casing; one with a capital matches only
-as written, so `Herder` leaves the ordinary word alone. A match at a sentence start keeps its capital.
-Add an entry when a term comes out wrong, as it comes out.
+Parakeet takes no prompt, so a term it hears wrong is fixed with a replacement instead. Each
+`[[engine.replace]]` entry rewrites `from` to `to` wherever `from` is a whole word or phrase. A
+lowercase `from` matches any casing; one with a capital matches only as written, so `Herder` leaves
+the ordinary word alone. A match at a sentence start keeps its capital. Add an entry when a term
+comes out wrong, with `from` spelt the way the model wrote it.
+
+The Whisper models take a `prompt` that biases their vocabulary. `small.en-q8_0` is 252 MB; `tiny.en`
+is 74 MB and noticeably worse. A `q8_0` model is a compressed build of the same size class - half the
+download, faster, and no accuracy difference observed.
 
 <details>
 <summary>Every setting, with defaults</summary>
@@ -120,14 +129,14 @@ Add an entry when a term comes out wrong, as it comes out.
 [engine]
 language = "en"
 threads = 0                  # CPU threads; 0 lets transcribe.cpp choose, at most 8
-prompt = "Terms: worktree, kubectl, herdr."   # biases the vocabulary
+prompt = "Terms: worktree, kubectl, herdr."   # Whisper models only; biases the vocabulary
 replace = []                 # [[engine.replace]] entries, as above
 
 [engine.model]
-name = "small.en-q8_0"
-# path = "/models/ggml-medium.en.bin"      # a local file, used as-is
-# url = "https://.../ggml-large-v3.bin"    # any model transcribe.cpp runs
-# sha256 = "..."                           # required with url
+name = "parakeet-ultra"
+# path = "/models/parakeet-tdt-0.6b-v3-Q8_0.gguf"   # a local file, used as-is
+# url = "https://.../model.gguf"                    # any GGUF or ggml model transcribe.cpp runs
+# sha256 = "..."                                    # required with url
 
 [silence]
 threshold = 300.0
@@ -169,7 +178,7 @@ recording never hears silence, so it will not stop on its own until you raise th
 
 Each dictation logs a `recorded` line: its length, what stopped it, and its loudest moment against `threshold`. A
 `no speech` that follows a loudness well under `threshold` is a quiet or wrong microphone. One well over it is sound
-the model heard as no words, and `whisper heard no words` shows what it made of it. The model server logs to
+the model heard as no words; with a Whisper model, `whisper heard no words` shows what it made of it. The model server logs to
 `server.log` in the plugin's state directory, emptied each time a server starts. `HERDR_DICTATE_LOG=debug` increases
 logging.
 
