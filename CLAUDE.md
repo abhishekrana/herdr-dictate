@@ -140,6 +140,9 @@ Verifying without a microphone:
   different build from the tree being edited.
 - `herdr plugin log list --plugin abhishekrana.dictate` is every invocation Herdr made, with exit status.
 - `herdr plugin action invoke abhishekrana.dictate.doctor` exercises the path an action really takes.
+- `transcribe FILE` from a build that is not the live one: point `HERDR_PLUGIN_CONFIG_DIR`, `HERDR_PLUGIN_STATE_DIR`
+  and `XDG_RUNTIME_DIR` at scratch directories. Otherwise it reads the live config and hands the clip to the live
+  model server, so the build under test never runs.
 
 Development registers the working tree; a release is consumed with `herdr plugin install abhishekrana/herdr-dictate`.
 The two are mutually exclusive — unlink before installing.
