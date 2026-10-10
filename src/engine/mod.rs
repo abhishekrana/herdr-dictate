@@ -34,6 +34,7 @@ pub enum Kind {
 pub struct Config {
     pub kind: Kind,
     pub model: ModelRef,
+    /// An ISO code such as `en`, or `auto` for the model to detect it.
     pub language: String,
     /// Text a whisper model treats as preceding the clip, biasing its
     /// vocabulary. Listed terms come out right; terms absent from it are

@@ -68,16 +68,15 @@ impl Replacement {
         if wanted.next().is_some() {
             return None;
         }
-        let ends_word = text[len..]
-            .chars()
-            .next()
-            .is_none_or(|c| !c.is_alphanumeric());
+        let ends_word = text[len..].chars().next().is_none_or(|c| !is_word(c));
         ends_word.then_some(len)
     }
 
-    /// `to`, opened with a capital when the matched text opened with one.
+    /// `to`, opened with a capital when the matched text opened with one and
+    /// `to` is all lowercase; a `to` with its own capitals is kept as written.
     fn render(&self, matched: &str) -> String {
-        let capital = matched.chars().next().is_some_and(char::is_uppercase);
+        let capital = matched.chars().next().is_some_and(char::is_uppercase)
+            && !self.to.chars().any(char::is_uppercase);
         let mut to = self.to.chars();
         match to.next() {
             Some(first) if capital && first.is_lowercase() => {
@@ -86,6 +85,11 @@ impl Replacement {
             _ => self.to.clone(),
         }
     }
+}
+
+/// Part of a word, so `user_id` is one word and never matches `user`.
+fn is_word(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
 }
 
 /// The longest replacement matching at the start of `text`; the first listed
@@ -116,13 +120,13 @@ pub fn apply(replacements: &[Replacement], text: &str) -> String {
         if let Some((replacement, len)) = found {
             out.push_str(&replacement.render(&rest[..len]));
             at += len;
-            starts_word = !rest[..len].ends_with(char::is_alphanumeric);
+            starts_word = !rest[..len].ends_with(is_word);
             continue;
         }
         let c = rest.chars().next().expect("not at the end");
         out.push(c);
         at += c.len_utf8();
-        starts_word = !c.is_alphanumeric();
+        starts_word = !is_word(c);
     }
     out
 }
@@ -202,6 +206,21 @@ mod tests {
         ];
         assert_eq!(apply(&table, "open a merge request"), "open a MR");
         assert_eq!(apply(&table, "merge it"), "MERGE it");
+    }
+
+    #[test]
+    fn a_to_with_its_own_capitals_is_kept_as_written() {
+        let table = vec![Replacement::new("ipad", "iPad")];
+        assert_eq!(apply(&table, "Ipad charging"), "iPad charging");
+    }
+
+    #[test]
+    fn an_underscore_joins_a_word() {
+        let table = vec![Replacement::new("user", "person")];
+        assert_eq!(
+            apply(&table, "user_id for the user"),
+            "user_id for the person"
+        );
     }
 
     #[test]

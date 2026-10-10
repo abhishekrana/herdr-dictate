@@ -85,7 +85,8 @@ impl Bundled {
     /// One pass over `audio`, returning its raw text.
     fn decode(&mut self, audio: &[f32], whisper: Option<WhisperRunOptions>) -> Result<String> {
         let options = RunOptions {
-            language: Some(self.language.clone()),
+            // transcribe.cpp detects the language when given none.
+            language: (self.language != "auto").then(|| self.language.clone()),
             family: whisper.map(RunExtension::Whisper),
             ..RunOptions::default()
         };
@@ -166,15 +167,12 @@ impl Engine for Bundled {
                 let options = options.clone();
                 self.transcribe_whisper(&audio, options)?
             }
-            // Collapsing whitespace also keeps a dictated newline from
-            // submitting a prompt.
-            Family::Plain => self
-                .decode(&audio, None)?
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" "),
+            Family::Plain => self.decode(&audio, None)?,
         };
-        Ok(replace::apply(&self.replacements, &text))
+        // Collapsing whitespace last also keeps a dictated or replaced-in
+        // newline from submitting a prompt.
+        let text = replace::apply(&self.replacements, &text);
+        Ok(text.split_whitespace().collect::<Vec<_>>().join(" "))
     }
 
     fn describe(&self) -> String {

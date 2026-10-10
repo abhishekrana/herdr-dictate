@@ -127,10 +127,10 @@ download, faster, and no accuracy difference observed.
 
 ```toml
 [engine]
-language = "en"
+language = "en"              # or "auto" to detect it
 threads = 0                  # CPU threads; 0 lets transcribe.cpp choose, at most 8
 prompt = "Terms: worktree, kubectl, herdr."   # Whisper models only; biases the vocabulary
-replace = []                 # [[engine.replace]] entries, as above
+replace = []                 # the same entries as [[engine.replace]] above; use one form, not both
 
 [engine.model]
 name = "parakeet-ultra"
