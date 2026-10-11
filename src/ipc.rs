@@ -150,6 +150,15 @@ impl Client {
         Ok(())
     }
 
+    /// Show a toast that expires on its own.
+    pub fn notify(&self, title: &str, body: &str) -> Result<()> {
+        self.call(
+            "notification.show",
+            json!({ "title": title, "body": body, "sound": "none" }),
+        )?;
+        Ok(())
+    }
+
     /// The directory Herdr registered this plugin from, if it is registered.
     pub fn plugin_root(&self) -> Result<Option<String>> {
         let result = self.call("plugin.list", json!({}))?;

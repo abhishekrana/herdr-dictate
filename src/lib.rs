@@ -16,6 +16,7 @@ pub mod doctor;
 pub mod engine;
 pub mod indicator;
 pub mod ipc;
+pub mod live;
 pub mod machine;
 pub mod model;
 pub mod remote;

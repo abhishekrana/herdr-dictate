@@ -8,9 +8,9 @@ use std::process::ExitCode;
 use anyhow::{Context as _, Result};
 use clap::{Parser, Subcommand};
 use herdr_dictate::{
-    capture, config, context::Context, doctor, engine, indicator::Indicator, ipc::Client, server,
-    session, session::MachineRef, session::Phase, session::Session, settings::Settings, setup,
-    sink, sink::Delivery, sink::Sink,
+    capture, config, context::Context, doctor, engine, indicator::Indicator, ipc::Client, live,
+    server, session, session::MachineRef, session::Phase, session::Session, settings::Settings,
+    setup, sink, sink::Delivery, sink::Sink,
 };
 
 #[derive(Parser)]
@@ -64,6 +64,9 @@ enum Command {
     Serve,
     /// Stop a running model server.
     ServeStop,
+    /// Turn live typing on or off, overriding `[chunking] enabled` until
+    /// toggled back.
+    ToggleChunking,
     /// Print one chip for the Herdr tab bar.
     Status,
     /// Report the wiring this plugin depends on.
@@ -124,6 +127,7 @@ fn run() -> Result<ExitCode> {
             println!("{}", if stopped { "stopped" } else { "not running" });
             Ok(ExitCode::SUCCESS)
         }
+        Command::ToggleChunking => toggle_chunking().map(|()| ExitCode::SUCCESS),
         Command::Status => status().map(|()| ExitCode::SUCCESS),
         Command::Doctor => Ok(run_doctor()),
         Command::Warm => warm().map(|()| ExitCode::SUCCESS),
@@ -201,21 +205,27 @@ fn toggle(submit: bool, source: &capture::Source) -> Result<ExitCode> {
             label: m.label,
         }),
     })?;
-    tracing::info!(%pane, submit, at = sink.describe(), "recording");
+    // Decided once, so a dictation keeps the mode it started in. Chunks need
+    // the warm server: loading the model mid-dictation would stall them.
+    let live =
+        settings.server.enabled && live::enabled(settings.chunking.enabled) && server::is_running();
+    tracing::info!(%pane, submit, at = sink.describe(), live, "recording");
     let indicator = Indicator::show(sink.clone(), pane.clone(), Phase::Recording);
+    if live {
+        return type_live(
+            &settings,
+            source,
+            stop,
+            &sink,
+            &pane,
+            submit,
+            indicator,
+            &mut active,
+        );
+    }
     let recording =
         capture::record(source, settings.silence.into(), stop, |_| {}).context("recording")?;
-
-    // Loudness against the threshold is what tells a muted or distant
-    // microphone from speech the model then dropped.
-    tracing::info!(
-        secs = recording.duration().as_secs_f64(),
-        stopped_by = ?recording.stopped_by,
-        heard_speech = recording.heard_speech,
-        loudest = recording.loudest.round(),
-        threshold = settings.silence.threshold,
-        "recorded"
-    );
+    log_recorded(&recording, &settings);
     if recording.samples.is_empty() {
         tracing::info!("nothing recorded");
         return Ok(ExitCode::SUCCESS);
@@ -292,6 +302,126 @@ fn toggle(submit: bool, source: &capture::Source) -> Result<ExitCode> {
         tracing::debug!(%err, "could not start the model server");
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Loudness against the threshold is what tells a muted or distant microphone
+/// from speech the model then dropped.
+fn log_recorded(recording: &capture::Recording, settings: &Settings) {
+    tracing::info!(
+        secs = recording.duration().as_secs_f64(),
+        stopped_by = ?recording.stopped_by,
+        heard_speech = recording.heard_speech,
+        loudest = recording.loudest.round(),
+        threshold = settings.silence.threshold,
+        "recorded"
+    );
+}
+
+/// Type each chunk at the speaker's pauses while recording, then the tail.
+#[allow(clippy::too_many_arguments)]
+fn type_live(
+    settings: &Settings,
+    source: &capture::Source,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    sink: &Sink,
+    pane: &str,
+    submit: bool,
+    indicator: Indicator,
+    active: &mut session::Active,
+) -> Result<ExitCode> {
+    let engine_config = settings.engine.clone();
+    let mut fallback: Option<Box<dyn engine::Engine>> = None;
+    let transcribe = move |samples: &[i16]| {
+        if let Some(text) = server::try_transcribe(samples) {
+            return Ok(text);
+        }
+        // The server went away mid-dictation, so the rest is transcribed here.
+        let engine = match &mut fallback {
+            Some(engine) => engine,
+            None => fallback.insert(engine::build(&engine_config, &mut std::io::stderr())?),
+        };
+        engine.transcribe(samples)
+    };
+    let deliver = {
+        let (sink, pane) = (sink.clone(), pane.to_owned());
+        move |text: &str| sink.deliver(&pane, text, false).map(|_| ())
+    };
+
+    let mut typing = live::Live::start(settings.chunking.into(), transcribe, deliver);
+    let recording = capture::record(source, settings.silence.into(), stop, |recorded| {
+        typing.hear(recorded)
+    })
+    .context("recording")?;
+    log_recorded(&recording, settings);
+
+    indicator.set(Phase::Transcribing);
+    active.transcribing();
+    let stopped = std::time::Instant::now();
+    let typed = typing.finish(&recording.samples);
+    let tail_ms = stopped.elapsed().as_millis();
+    drop(indicator);
+
+    if let Some(err) = typed.error {
+        let err = anyhow::Error::new(err);
+        if typed.undelivered.is_empty() {
+            return Err(err.context("part of the dictation was lost"));
+        }
+        let kept = session::keep_undelivered(&typed.undelivered)?;
+        return Err(err.context(format!("the rest of the words are in {}", kept.display())));
+    }
+    if typed.chunks == 0 {
+        tracing::info!(
+            secs = recording.duration().as_secs_f64(),
+            stopped_by = ?recording.stopped_by,
+            heard_speech = recording.heard_speech,
+            tail_ms,
+            "no speech"
+        );
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    let delivery = if submit {
+        sink.submit(pane).context("pressing Enter")?
+    } else {
+        Delivery::Typed
+    };
+    if delivery == Delivery::AgentGone {
+        tracing::warn!(%pane, "the agent had gone, so the words were left unsent");
+    }
+    tracing::info!(
+        %pane,
+        at = sink.describe(),
+        chunks = typed.chunks,
+        chars = typed.chars,
+        ?delivery,
+        stopped_by = ?recording.stopped_by,
+        tail_ms,
+        "delivered"
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Flip live typing, and say which way it went.
+fn toggle_chunking() -> Result<()> {
+    let settings = Settings::load().context("reading the plugin config")?;
+    let on = live::toggle(settings.chunking.enabled).context("saving the live typing setting")?;
+    let (title, body) = match (on, settings.server.enabled) {
+        (true, true) => ("Dictate: live typing on", "Words are typed at each pause."),
+        (true, false) => (
+            "Dictate: live typing on",
+            "It needs [server] enabled; until then words arrive when you stop.",
+        ),
+        (false, _) => ("Dictate: live typing off", "Words are typed when you stop."),
+    };
+    tracing::info!(on, "live typing");
+    println!("{title}. {body}");
+    // Outside Herdr there is no toast to show, and the line above says it.
+    if let Ok(client) = Client::from_env()
+        && let Err(err) = client.notify(title, body)
+    {
+        tracing::warn!(%err, "toast not shown");
+    }
+    Ok(())
 }
 
 /// Open the shared ssh connection ahead of a dictation.

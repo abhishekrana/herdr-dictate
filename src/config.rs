@@ -28,6 +28,11 @@ pub const BINDINGS: &[Binding] = &[
         action: "toggle-send",
         description: "dictate: toggle and submit",
     },
+    Binding {
+        key: "prefix+alt+v",
+        action: "toggle-chunking",
+        description: "dictate: toggle live typing",
+    },
 ];
 
 impl Binding {

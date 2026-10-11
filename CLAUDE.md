@@ -52,7 +52,15 @@ daemon; the only long-lived process is the optional model server.
   latched at record start so words land where the user was looking. Absent context is not an error (a global hotkey
   arrives with none); `ipc::Client::focused_pane` then asks the server.
 - `capture` → `audio` — `capture` is the single platform boundary (cpal/ALSA), opened at 16 kHz mono so nothing
-  resamples. `audio` is pure functions over buffers, which is where recording-end decisions are tested.
+  resamples; `toggle --from-wav` swaps the microphone for a WAV played in real time. `audio` is pure functions over
+  buffers, which is where recording-end decisions are tested. Loudness is taken around each window's mean: some
+  microphones sit about 1,000 counts off zero, which plain RMS reads as speech.
+- `chunk` → `live` — live typing. `chunk::Chunker` is pure: Myna's rule (5 s arm, 0.8 s pause, 25 s ceiling at the
+  longest pause) over Myna's adaptive voice detector on 30 ms frames; a chunk of silence is skipped. `live::Live`
+  feeds it from the capture loop and hands each chunk to one worker thread that transcribes and types it, which is
+  what keeps the order. The mode is decided once per dictation: on when `[chunking] enabled` (or the
+  `toggle-chunking` override in the state dir) and the model server is already up; otherwise today's whole-recording
+  path. After the first failure nothing more is typed, and the rest goes to `undelivered.txt`.
 - `engine` — the `Engine` trait plus `engine::build`; `engine::bundled` is transcribe.cpp, and the loaded model's
   architecture picks its `Family`. Parakeet (the default, `parakeet-ultra`) takes the text as decoded. Whisper takes
   the prompt, a no-speech gate, `strip_non_speech` and the retry: transcribe.cpp suppresses whisper's silence labels,
@@ -140,9 +148,13 @@ Verifying without a microphone:
   different build from the tree being edited.
 - `herdr plugin log list --plugin abhishekrana.dictate` is every invocation Herdr made, with exit status.
 - `herdr plugin action invoke abhishekrana.dictate.doctor` exercises the path an action really takes.
+- `toggle --from-wav FILE` runs a whole dictation from a 16 kHz mono WAV in real time. Point `HERDR_SOCKET_PATH` at a
+  stub that answers every request, and the scratch directories below, to see what would be typed and when.
 - `transcribe FILE` from a build that is not the live one: point `HERDR_PLUGIN_CONFIG_DIR`, `HERDR_PLUGIN_STATE_DIR`
   and `XDG_RUNTIME_DIR` at scratch directories. Otherwise it reads the live config and hands the clip to the live
-  model server, so the build under test never runs.
+  model server, so the build under test never runs. Keep the scratch runtime path short: a Unix socket path is
+  limited to 108 bytes. A microphone under a scratch `XDG_RUNTIME_DIR` also needs
+  `PIPEWIRE_RUNTIME_DIR=/run/user/$(id -u)`, or ALSA's PipeWire plugin cannot reach the sound server.
 
 Development registers the working tree; a release is consumed with `herdr plugin install abhishekrana/herdr-dictate`.
 The two are mutually exclusive — unlink before installing.

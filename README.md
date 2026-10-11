@@ -3,7 +3,7 @@
 # herdr-dictate
 
 **Speak into any pane.** Local speech-to-text for [Herdr](https://herdr.dev): press a key, talk, and
-the transcript is typed where you were looking.
+the words are typed where you were looking, a sentence or two at a time while you speak.
 
 [![ci](https://github.com/abhishekrana/herdr-dictate/actions/workflows/ci.yml/badge.svg)](https://github.com/abhishekrana/herdr-dictate/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/abhishekrana/herdr-dictate)](https://github.com/abhishekrana/herdr-dictate/releases)
@@ -33,7 +33,7 @@ herdr plugin pane open --plugin abhishekrana.dictate --entrypoint setup
 ```
 
 Herdr plugins cannot register their own keys, so `setup` offers to add them: `prefix+v` dictates,
-`prefix+shift+v` dictates and submits. It backs up `config.toml` and appends rather than rewriting,
+`prefix+shift+v` dictates and submits, `prefix+alt+v` turns live typing on or off. It backs up `config.toml` and appends rather than rewriting,
 so comments survive.
 
 Installing downloads a prebuilt binary when one fits this machine, and compiles otherwise.
@@ -61,11 +61,23 @@ Press the key, speak, then press it again. Or just stop talking - a couple of se
 ends the recording on its own. The first dictation downloads the model, so it takes noticeably
 longer than every one after it.
 
-| action        | what it does                                       |
-| ------------- | -------------------------------------------------- |
-| `toggle`      | start recording, or stop and insert the transcript  |
-| `toggle-send` | the same, then press Enter once the transcript lands |
-| `doctor`      | check every dependency and say what to do about it  |
+The words are typed while you speak. Each time you pause for most of a second after five seconds
+or more of speech, what you said so far is transcribed and typed, so when you stop only the last
+few seconds are left and they arrive in about a tenth of a second. Short passes are also more
+accurate than one long one: on recorded dictations of 35 s to 160 s, live typing made 7% word
+errors where one pass over the whole recording made 10%. A pause inside a sentence can end it with a
+full stop.
+
+Live typing needs the model loaded already, so the first dictation after the model server starts,
+or with `[server]` off, is typed whole when you stop. `toggle-chunking` turns live typing off and on
+again; it stays as set across restarts, and a dictation already running keeps the mode it began in.
+
+| action            | what it does                                          |
+| ----------------- | ----------------------------------------------------- |
+| `toggle`          | start recording, or stop and insert the transcript     |
+| `toggle-send`     | the same, then press Enter once the transcript lands   |
+| `toggle-chunking` | turn live typing off or on; a toast says which         |
+| `doctor`          | check every dependency and say what to do about it     |
 
 Any desktop shortcut can start a dictation, whether or not Herdr has focus - bind this command:
 
@@ -103,6 +115,9 @@ to = "worktree"
 [silence]
 threshold = 300.0            # how loud audio must be to count as speech
 trailing_secs = 2.0          # seconds of silence that end a recording; 0 to never stop on its own
+
+[chunking]
+enabled = true               # type at each pause; false types the whole dictation when you stop
 ```
 
 Models download on first use and are checked against a known hash. The default, `parakeet-ultra`,
@@ -144,6 +159,12 @@ trailing_secs = 2.0
 max_secs = 120.0            # a recording never runs longer than this
 min_speech_secs = 0.2       # unbroken loudness that counts as speech; a key click is shorter
 
+[chunking]                   # live typing
+enabled = true               # toggle-chunking overrides this until toggled back
+arm_secs = 5.0               # speech that must build up before a pause may close a chunk
+pause_secs = 0.8             # the pause that closes a chunk
+ceiling_secs = 25.0          # the longest chunk; one without a pause is cut at its longest shorter one
+
 [server]
 enabled = true
 idle_secs = 300              # 0 keeps the model resident forever
@@ -176,7 +197,9 @@ herdr plugin log list --plugin abhishekrana.dictate
 compare the room against the speech threshold: if it reports a room louder than `threshold`, the
 recording never hears silence, so it will not stop on its own until you raise that number.
 
-Each dictation logs a `recorded` line: its length, what stopped it, and its loudest moment against `threshold`. A
+Each dictation logs a `recorded` line: its length, what stopped it, and its loudest moment against `threshold`, and with
+live typing a `chunk` line per chunk with its length and how long the model took. Words that could not be typed
+are kept in `undelivered.txt` in the plugin's state directory. A
 `no speech` that follows a loudness well under `threshold` is a quiet or wrong microphone. One well over it is sound
 the model heard as no words; with a Whisper model, `whisper heard no words` shows what it made of it. The model server logs to
 `server.log` in the plugin's state directory, emptied each time a server starts. `HERDR_DICTATE_LOG=debug` increases

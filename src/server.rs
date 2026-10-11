@@ -41,6 +41,11 @@ pub fn socket_path() -> PathBuf {
     dir.join(format!("{PLUGIN_ID}.sock"))
 }
 
+/// Whether a server is accepting work now.
+pub fn is_running() -> bool {
+    UnixStream::connect(socket_path()).is_ok()
+}
+
 /// Transcribe through a running server, or `None` if there is not one.
 ///
 /// Never an error: an unreachable server means fall back, not fail.
@@ -181,7 +186,11 @@ fn handle(mut stream: UnixStream, engine: &mut dyn engine::Engine) -> Result<()>
     stream.set_read_timeout(Some(CALL_TIMEOUT))?;
 
     let mut count = [0u8; 4];
-    stream.read_exact(&mut count)?;
+    match stream.read_exact(&mut count) {
+        // A connection closed without a request is a readiness probe.
+        Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(()),
+        other => other?,
+    }
     let count = u32::from_le_bytes(count);
     if count > MAX_SAMPLES {
         return respond(
@@ -263,6 +272,25 @@ mod tests {
         // Nothing is listening on a path under a fresh temp dir.
         let dir = tempfile::tempdir().unwrap();
         assert!(UnixStream::connect(dir.path().join("absent.sock")).is_err());
+    }
+
+    struct Unused;
+
+    impl engine::Engine for Unused {
+        fn transcribe(&mut self, _: &[i16]) -> Result<String> {
+            panic!("a probe is not a request")
+        }
+
+        fn describe(&self) -> String {
+            String::new()
+        }
+    }
+
+    #[test]
+    fn a_readiness_probe_is_not_an_error() {
+        let (probe, served) = UnixStream::pair().unwrap();
+        drop(probe);
+        assert!(handle(served, &mut Unused).is_ok());
     }
 
     #[test]

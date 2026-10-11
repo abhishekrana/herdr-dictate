@@ -7,6 +7,7 @@ use std::time::Duration;
 use serde::Deserialize;
 
 use crate::audio::SilenceConfig;
+use crate::chunk::ChunkConfig;
 use crate::engine;
 use crate::{Error, PLUGIN_ID, Result};
 
@@ -15,6 +16,7 @@ use crate::{Error, PLUGIN_ID, Result};
 pub struct Settings {
     pub engine: engine::Config,
     pub silence: Silence,
+    pub chunking: Chunking,
     pub server: Server,
     pub status: Status,
     pub remote: Remote,
@@ -96,6 +98,43 @@ impl From<Silence> for SilenceConfig {
             trailing: Duration::from_secs_f64(value.trailing_secs.max(0.0)),
             max_duration: Duration::from_secs_f64(value.max_secs.max(1.0)),
             min_speech: Duration::from_secs_f64(value.min_speech_secs.max(0.0)),
+        }
+    }
+}
+
+/// Typing a dictation chunk by chunk, at the speaker's pauses.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Chunking {
+    /// Type at each pause. Off types the whole dictation once it ends.
+    /// `toggle-chunking` overrides this until toggled back.
+    pub enabled: bool,
+    /// Audio that must build up before a pause may close a chunk.
+    pub arm_secs: f64,
+    /// Silence that closes a chunk.
+    pub pause_secs: f64,
+    /// The longest chunk; one with no pause is cut at its longest shorter one.
+    pub ceiling_secs: f64,
+}
+
+impl Default for Chunking {
+    fn default() -> Self {
+        let base = ChunkConfig::default();
+        Self {
+            enabled: true,
+            arm_secs: base.arm.as_secs_f64(),
+            pause_secs: base.pause.as_secs_f64(),
+            ceiling_secs: base.ceiling.as_secs_f64(),
+        }
+    }
+}
+
+impl From<Chunking> for ChunkConfig {
+    fn from(value: Chunking) -> Self {
+        Self {
+            arm: Duration::from_secs_f64(value.arm_secs.max(0.0)),
+            pause: Duration::from_secs_f64(value.pause_secs.max(0.1)),
+            ceiling: Duration::from_secs_f64(value.ceiling_secs.max(1.0)),
         }
     }
 }
@@ -290,6 +329,38 @@ mod tests {
         assert!(
             config.max_duration >= Duration::from_secs(1),
             "a zero cap would end every recording at once"
+        );
+    }
+
+    #[test]
+    fn live_typing_is_on_by_default_and_can_be_turned_off() {
+        assert!(Settings::default().chunking.enabled);
+        let settings: Settings = toml::from_str("[chunking]\nenabled = false\n").unwrap();
+        assert!(!settings.chunking.enabled);
+        assert_eq!(
+            ChunkConfig::from(settings.chunking),
+            ChunkConfig::default(),
+            "the cut rule keeps its defaults"
+        );
+    }
+
+    #[test]
+    fn chunk_timings_convert_and_are_clamped_sane() {
+        let config: ChunkConfig = Chunking {
+            enabled: true,
+            arm_secs: 10.0,
+            pause_secs: 0.0,
+            ceiling_secs: 0.0,
+        }
+        .into();
+        assert_eq!(config.arm, Duration::from_secs(10));
+        assert!(
+            config.pause > Duration::ZERO,
+            "a zero pause would cut at every quiet frame"
+        );
+        assert!(
+            config.ceiling >= Duration::from_secs(1),
+            "a zero ceiling would cut every frame"
         );
     }
 

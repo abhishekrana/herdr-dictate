@@ -10,7 +10,7 @@ use crate::audio::{SilenceConfig, typical_level};
 use crate::context::Context;
 use crate::ipc::Client;
 use crate::settings::Settings;
-use crate::{PLUGIN_ID, capture, config, server};
+use crate::{PLUGIN_ID, capture, config, live, server};
 
 /// The entry to add to Herdr's own config, naming this binary by its real path:
 /// the plugin is not on PATH.
@@ -78,6 +78,7 @@ pub fn run() -> Vec<Check> {
         input_device(),
         input_level(),
         model_server(),
+        live_typing(),
         config_file(),
         bindings(),
         registration(),
@@ -401,7 +402,7 @@ fn input_level() -> Check {
 /// the load itself.
 fn model_server() -> Check {
     let path = server::socket_path();
-    if std::os::unix::net::UnixStream::connect(&path).is_ok() {
+    if server::is_running() {
         ok("model.server", format!("resident at {}", path.display()))
     } else {
         warn(
@@ -409,6 +410,27 @@ fn model_server() -> Check {
             "not running",
             "Started after the next dictation; the one before it loads the model itself.",
         )
+    }
+}
+
+/// Whether words are typed at each pause or once the dictation ends.
+fn live_typing() -> Check {
+    let name = "typing.live";
+    let settings = Settings::load().unwrap_or_default();
+    let on = live::enabled(settings.chunking.enabled);
+    let from = if live::overridden() {
+        "set by toggle-chunking"
+    } else {
+        "from the config"
+    };
+    match (on, settings.server.enabled) {
+        (true, false) => warn(
+            name,
+            format!("on ({from}), but the model server is off"),
+            "Live typing needs [server] enabled; until then words arrive when you stop.",
+        ),
+        (true, true) => ok(name, format!("on: typed at each pause ({from})")),
+        (false, _) => ok(name, format!("off: typed when you stop ({from})")),
     }
 }
 

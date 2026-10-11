@@ -24,6 +24,13 @@ description = "Same, then press Enter once the transcript lands"
 contexts = ["workspace", "pane"]
 command = ["./target/release/herdr-dictate", "toggle", "--submit"]
 
+[[actions]]
+id = "toggle-chunking"
+title = "Dictate: toggle live typing"
+description = "Type the words at each pause, or only once you stop"
+contexts = ["workspace", "pane"]
+command = ["./target/release/herdr-dictate", "toggle-chunking"]
+
 # Opening the shared ssh connection once means the first dictation to a saved
 # machine does not pay for a handshake.
 [[startup]]
