@@ -20,13 +20,29 @@ pub fn to_mono_i16(samples: &[f32], channels: u16) -> Vec<i16> {
         .collect()
 }
 
-/// Root mean square of a buffer, in `i16` units.
+/// Root mean square of a buffer around its own mean, in `i16` units.
+///
+/// Some microphones carry a DC offset (one measured at about 1,000), which
+/// plain RMS would read as constant loudness.
 pub fn rms(samples: &[i16]) -> f64 {
     if samples.is_empty() {
         return 0.0;
     }
-    let sum: f64 = samples.iter().map(|&s| (s as f64).powi(2)).sum();
-    (sum / samples.len() as f64).sqrt()
+    let n = samples.len() as f64;
+    let mean = samples.iter().map(|&s| s as f64).sum::<f64>() / n;
+    let sum: f64 = samples.iter().map(|&s| (s as f64 - mean).powi(2)).sum();
+    (sum / n).sqrt()
+}
+
+/// The median window's loudness: what the room sounds like most of the time,
+/// unmoved by the step some devices produce as they open.
+pub fn typical_level(samples: &[i16]) -> f64 {
+    let mut levels: Vec<f64> = samples.chunks(WINDOW).map(rms).collect();
+    if levels.is_empty() {
+        return 0.0;
+    }
+    levels.sort_by(f64::total_cmp);
+    levels[levels.len() / 2]
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -186,6 +202,33 @@ mod tests {
     #[test]
     fn rms_tracks_amplitude() {
         assert!((rms(&frame(1000, 128)) - 1000.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn a_dc_offset_is_not_loudness() {
+        let offset: Vec<i16> = frame(20, WINDOW).iter().map(|s| s + 1029).collect();
+        assert!(rms(&offset) < 21.0, "only the 20-count ripple is left");
+    }
+
+    #[test]
+    fn room_tone_with_a_dc_offset_still_ends_the_recording() {
+        let shifted =
+            |samples: Vec<i16>| -> Vec<i16> { samples.iter().map(|s| s + 1029).collect() };
+        let mut detector = SilenceDetector::new(SilenceConfig::default());
+        assert_eq!(detector.push(&shifted(second(5000))), Decision::Continue);
+        assert_eq!(detector.push(&shifted(second(40))), Decision::Continue);
+        assert_eq!(
+            detector.push(&shifted(second(40))),
+            Decision::SilenceReached
+        );
+    }
+
+    #[test]
+    fn a_device_opening_with_a_loud_step_reads_as_its_room() {
+        let mut opening = vec![-16_000; 4 * WINDOW];
+        opening.extend(frame(50, 30 * WINDOW));
+        assert_eq!(typical_level(&opening), 50.0);
+        assert_eq!(typical_level(&[]), 0.0);
     }
 
     #[test]

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use crate::audio::{SilenceConfig, rms};
+use crate::audio::{SilenceConfig, typical_level};
 use crate::context::Context;
 use crate::ipc::Client;
 use crate::settings::Settings;
@@ -382,7 +382,7 @@ fn input_level() -> Check {
             "The stream opened but delivered nothing.",
         ),
         Ok(recording) => {
-            let ambient = rms(&recording.samples);
+            let ambient = typical_level(&recording.samples);
             let detail = format!("ambient rms {ambient:.0}, speech threshold {threshold:.0}");
             if ambient >= threshold {
                 warn(
