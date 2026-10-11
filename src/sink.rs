@@ -72,6 +72,17 @@ impl Sink {
         }
     }
 
+    /// Press Enter on words already typed, as `deliver` does when submitting.
+    pub fn submit(&self, pane: &str) -> Result<Delivery> {
+        match self {
+            Self::Local(client) => {
+                client.send_keys(pane, &["enter"])?;
+                Ok(Delivery::Submitted)
+            }
+            Self::Remote(target) => run_remote(target, &remote::submit_script(target, pane), true),
+        }
+    }
+
     pub fn set_label(&self, pane: &str, phase: Phase, ttl: Duration) -> Result<()> {
         match self {
             Self::Local(client) => client.set_pane_label(pane, phase.label(), ttl),
@@ -131,15 +142,22 @@ fn deliver_remote(target: &Target, pane: &str, text: &str, submit: bool) -> Resu
             message: "transcript contains a NUL".into(),
         });
     }
-    let script = remote::deliver_script(target, pane, text, submit);
+    run_remote(
+        target,
+        &remote::deliver_script(target, pane, text, submit),
+        submit,
+    )
+}
 
-    let mut output = remote::run(&target.ssh, "deliver", &script)?;
+/// Run a delivery script, retrying once over a stale connection.
+fn run_remote(target: &Target, script: &str, submit: bool) -> Result<Delivery> {
+    let mut output = remote::run(&target.ssh, "deliver", script)?;
     if output.is_transport_failure() {
         // A shared connection can go stale between dictations; ssh reconnects
         // on its own, so one retry is the whole recovery.
         tracing::warn!(machine = %target.label, "transport failed; retrying once");
         std::thread::sleep(Duration::from_millis(200));
-        output = remote::run(&target.ssh, "deliver-retry", &script)?;
+        output = remote::run(&target.ssh, "deliver-retry", script)?;
     }
 
     match output.code {
@@ -257,6 +275,16 @@ mod tests {
         let script = remote::deliver_script(&target(), "w1:p3", "hello", false);
         assert!(!script.contains("agent prompt"));
         assert!(script.contains("pane send-text"));
+    }
+
+    #[test]
+    fn submitting_typed_words_presses_enter_only_for_an_agent() {
+        let script = remote::submit_script(&target(), "w1:p3");
+        let agent = script.find("agent list").unwrap();
+        let enter = script.find("pane send-keys \"$P\" enter").unwrap();
+        assert!(agent < enter, "the agent is checked before Enter");
+        assert!(script.trim_end().ends_with("exit 3"));
+        assert!(!script.contains("send-text"));
     }
 
     #[test]

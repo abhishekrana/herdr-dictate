@@ -308,6 +308,23 @@ pub fn deliver_script(target: &Target, pane: &str, text: &str, submit: bool) -> 
     script
 }
 
+/// Press Enter in `pane`, but only while an agent still holds it: at a shell
+/// prompt Enter would run the words already typed as a command.
+pub fn submit_script(target: &Target, pane: &str) -> String {
+    let mut script = String::from("set -u\n");
+    script.push_str(&format!("H={}\n", sq(&target.herdr)));
+    script.push_str(&format!("S={}\n", sq(&target.session)));
+    script.push_str(&format!("P={}\n", sq(pane)));
+    script.push_str(
+        "if \"$H\" --session \"$S\" agent list \
+         | grep -q \"\\\"pane_id\\\"[[:space:]]*:[[:space:]]*\\\"$P\\\"\"; then\n\
+         \x20   exec \"$H\" --session \"$S\" pane send-keys \"$P\" enter\n\
+         fi\n",
+    );
+    script.push_str(&format!("exit {AGENT_GONE}\n"));
+    script
+}
+
 /// The file on the remote machine, beside that machine's own plugin state,
 /// that names the phase of a dictation delivering there.
 pub const REMOTE_STATE: &str = "remote.json";
