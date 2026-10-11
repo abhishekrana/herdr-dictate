@@ -31,6 +31,10 @@ enum Command {
         /// Press Enter once the transcript lands.
         #[arg(long)]
         submit: bool,
+        /// Read a 16 kHz mono WAV in real time instead of the microphone,
+        /// ending when the file does. For testing without a microphone.
+        #[arg(long, value_name = "FILE")]
+        from_wav: Option<std::path::PathBuf>,
     },
     /// Read a transcript on stdin and type it into the target pane.
     Deliver {
@@ -93,7 +97,10 @@ fn main() -> ExitCode {
 
 fn run() -> Result<ExitCode> {
     match Cli::parse().command {
-        Command::Toggle { submit } => toggle(submit),
+        Command::Toggle { submit, from_wav } => {
+            let source = from_wav.map_or(capture::Source::Microphone, capture::Source::Wav);
+            toggle(submit, &source)
+        }
         Command::Deliver { submit } => deliver(submit).map(|()| ExitCode::SUCCESS),
         Command::Setup { apply, print } => {
             let mode = match (apply, print) {
@@ -147,7 +154,7 @@ fn warning(err: &herdr_dictate::Error) -> String {
 }
 
 /// A dictation is two invocations: the first records, the second stops it.
-fn toggle(submit: bool) -> Result<ExitCode> {
+fn toggle(submit: bool, source: &capture::Source) -> Result<ExitCode> {
     if let Some(running) = session::live()? {
         session::stop(&running).context("stopping the recorder")?;
         tracing::info!(pid = running.pid, "stopping");
@@ -196,7 +203,8 @@ fn toggle(submit: bool) -> Result<ExitCode> {
     })?;
     tracing::info!(%pane, submit, at = sink.describe(), "recording");
     let indicator = Indicator::show(sink.clone(), pane.clone(), Phase::Recording);
-    let recording = capture::record(settings.silence.into(), stop).context("recording")?;
+    let recording =
+        capture::record(source, settings.silence.into(), stop, |_| {}).context("recording")?;
 
     // Loudness against the threshold is what tells a muted or distant
     // microphone from speech the model then dropped.
@@ -352,7 +360,8 @@ fn record(out: &std::path::Path, seconds: u64) -> Result<()> {
         ..Default::default()
     };
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let recording = capture::record(silence, stop).context("recording")?;
+    let recording = capture::record(&capture::Source::Microphone, silence, stop, |_| {})
+        .context("recording")?;
     capture::write_wav(out, &recording.samples).context("writing the wav")?;
     println!(
         "{:.1}s, {} samples, stopped by {:?} -> {}",
@@ -365,10 +374,7 @@ fn record(out: &std::path::Path, seconds: u64) -> Result<()> {
 }
 
 fn transcribe(file: &std::path::Path) -> Result<()> {
-    let mut reader =
-        hound::WavReader::open(file).with_context(|| format!("opening {}", file.display()))?;
-    let samples: std::result::Result<Vec<i16>, _> = reader.samples::<i16>().collect();
-    let samples = samples.context("reading samples")?;
+    let samples = capture::read_wav(file).context("reading the wav")?;
 
     let settings = Settings::load().context("reading the plugin config")?;
 

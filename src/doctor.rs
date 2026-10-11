@@ -365,7 +365,12 @@ fn input_level() -> Check {
         max_duration: LEVEL_SAMPLE,
         ..SilenceConfig::default()
     };
-    match capture::record(silence, Arc::new(AtomicBool::new(false))) {
+    match capture::record(
+        &capture::Source::Microphone,
+        silence,
+        Arc::new(AtomicBool::new(false)),
+        |_| {},
+    ) {
         Err(err) => fail(
             "audio.level",
             err.to_string(),
