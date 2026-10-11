@@ -94,7 +94,7 @@ pub fn log_path() -> Result<PathBuf> {
 /// Start a detached server. Returns once it is spawned, not once it is ready.
 ///
 /// Its log starts empty with each server, so it holds one server's life.
-pub fn spawn() -> Result<()> {
+pub fn spawn() -> Result<std::process::Child> {
     use std::os::unix::process::CommandExt;
 
     let log = log_path().and_then(|path| {
@@ -119,8 +119,8 @@ pub fn spawn() -> Result<()> {
         .stderr(stderr)
         // Its own process group, so the press that spawned it can exit freely.
         .process_group(0)
-        .spawn()?;
-    Ok(())
+        .spawn()
+        .map_err(Into::into)
 }
 
 /// Load the engine, then serve until idle for `idle`.

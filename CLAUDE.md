@@ -59,8 +59,9 @@ daemon; the only long-lived process is the optional model server.
   longest pause) over Myna's adaptive voice detector on 30 ms frames; a chunk of silence is skipped. `live::Live`
   feeds it from the capture loop and hands each chunk to one worker thread that transcribes and types it, which is
   what keeps the order. The mode is decided once per dictation: on when `[chunking] enabled` (or the
-  `toggle-chunking` override in the state dir) and the model server is already up; otherwise today's whole-recording
-  path. After the first failure nothing more is typed, and the rest goes to `undelivered.txt`.
+  `toggle-chunking` override in the state dir) and `[server] enabled`; otherwise the whole-recording path. A live
+  dictation that finds no server spawns one as it starts, and its chunks wait for that server rather than load a
+  second copy, unless it exits. After the first failure nothing more is typed, and the rest goes to `undelivered.txt`.
 - `engine` — the `Engine` trait plus `engine::build`; `engine::bundled` is transcribe.cpp, and the loaded model's
   architecture picks its `Family`. Parakeet (the default, `parakeet-ultra`) takes the text as decoded. Whisper takes
   the prompt, a no-speech gate, `strip_non_speech` and the retry: transcribe.cpp suppresses whisper's silence labels,
@@ -72,8 +73,9 @@ daemon; the only long-lived process is the optional model server.
   busy machine and quadrupled the wait when measured.
 - `model` — a model is named three ways (`name` / `path` / `url` + `sha256`), so an unknown model needs no code
   change. Downloads land in `.part` and are renamed only after the digest matches.
-- `server` — holds the engine resident between presses. Spawned lazily and **after** delivering, so two copies never
-  load at once. Unreachable is never an error: that press transcribes in-process. The socket is bound only once the
+- `server` — holds the engine resident between presses. Spawned lazily: **after** delivering on the whole-recording
+  path, and as a live dictation starts, whose chunks wait for it; either way two copies never load at once.
+  Unreachable is never an error: that press transcribes in-process. The socket is bound only once the
   engine is ready, so connectability *is* readiness. Length-prefixed binary wire format, separate from Herdr's JSON.
 - `ipc` — Herdr's socket API, one JSON object per line over `HERDR_SOCKET_PATH`. Spoken to directly rather than by
   spawning `herdr`, keeping process spawns off the delivery path. Errors carry Herdr's own codes.

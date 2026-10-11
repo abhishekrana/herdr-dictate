@@ -205,10 +205,8 @@ fn toggle(submit: bool, source: &capture::Source) -> Result<ExitCode> {
             label: m.label,
         }),
     })?;
-    // Decided once, so a dictation keeps the mode it started in. Chunks need
-    // the warm server: loading the model mid-dictation would stall them.
-    let live =
-        settings.server.enabled && live::enabled(settings.chunking.enabled) && server::is_running();
+    // Decided once, so a dictation keeps the mode it started in.
+    let live = settings.server.enabled && live::enabled(settings.chunking.enabled);
     tracing::info!(%pane, submit, at = sink.describe(), live, "recording");
     let indicator = Indicator::show(sink.clone(), pane.clone(), Phase::Recording);
     if live {
@@ -329,9 +327,25 @@ fn type_live(
     indicator: Indicator,
     active: &mut session::Active,
 ) -> Result<ExitCode> {
+    // Started now, it has loaded the model by the time the first chunk closes.
+    let mut starting = if server::is_running() {
+        None
+    } else {
+        server::spawn()
+            .inspect_err(|err| tracing::debug!(%err, "could not start the model server"))
+            .ok()
+    };
     let engine_config = settings.engine.clone();
     let mut fallback: Option<Box<dyn engine::Engine>> = None;
     let transcribe = move |samples: &[i16]| {
+        // Waiting for the server this dictation started, rather than loading a
+        // second copy of the model beside it, unless it exits first.
+        if let Some(server) = &mut starting {
+            while !server::is_running() && matches!(server.try_wait(), Ok(None)) {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            starting = None;
+        }
         if let Some(text) = server::try_transcribe(samples) {
             return Ok(text);
         }
@@ -362,12 +376,15 @@ fn type_live(
     drop(indicator);
 
     if let Some(err) = typed.error {
-        let err = anyhow::Error::new(err);
-        if typed.undelivered.is_empty() {
-            return Err(err.context("part of the dictation was lost"));
+        let mut err = anyhow::Error::new(err);
+        if typed.lost > 0 {
+            err = err.context(format!("{} chunk(s) could not be transcribed", typed.lost));
         }
-        let kept = session::keep_undelivered(&typed.undelivered)?;
-        return Err(err.context(format!("the rest of the words are in {}", kept.display())));
+        if !typed.undelivered.is_empty() {
+            let kept = session::keep_undelivered(&typed.undelivered)?;
+            err = err.context(format!("words not typed are in {}", kept.display()));
+        }
+        return Err(err);
     }
     if typed.chunks == 0 {
         tracing::info!(

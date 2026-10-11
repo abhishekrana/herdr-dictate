@@ -25,6 +25,8 @@ pub struct Typed {
     pub chunks: usize,
     /// Characters that reached the pane.
     pub chars: usize,
+    /// Chunks that could not be transcribed, whose words are gone.
+    pub lost: usize,
     /// The first failure. Once one happens nothing more is typed, so the pane
     /// never holds words with a gap in them.
     pub error: Option<Error>,
@@ -83,6 +85,7 @@ impl Live {
                     Ok(text) => text,
                     Err(err) => {
                         tracing::warn!(chunk = index, %err, "chunk not transcribed");
+                        typed.lost += 1;
                         typed.error.get_or_insert(err);
                         continue;
                     }
@@ -358,6 +361,7 @@ mod tests {
         let typed = live.finish(&samples);
         assert_eq!(*pane.lock().unwrap(), ["Chunk 1."]);
         assert_eq!(typed.undelivered, "Chunk 3.");
+        assert_eq!(typed.lost, 1, "the gap is counted, not hidden");
         assert!(matches!(typed.error, Some(Error::Model(_))));
     }
 

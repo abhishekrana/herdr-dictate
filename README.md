@@ -68,9 +68,10 @@ accurate than one long one: on recorded dictations of 35 s to 160 s, live typing
 errors where one pass over the whole recording made 10%. A pause inside a sentence can end it with a
 full stop.
 
-Live typing needs the model loaded already, so the first dictation after the model server starts,
-or with `[server]` off, is typed whole when you stop. `toggle-chunking` turns live typing off and on
-again; it stays as set across restarts, and a dictation already running keeps the mode it began in.
+Live typing runs on the model server. A dictation that finds none starts it as recording begins, and
+its first words wait for the model to load. With `[server]` off, words are typed whole when you stop.
+`toggle-chunking` turns live typing off and on again; it stays as set across restarts, and a
+dictation already running keeps the mode it began in.
 
 | action            | what it does                                          |
 | ----------------- | ----------------------------------------------------- |
