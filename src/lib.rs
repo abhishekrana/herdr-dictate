@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 pub mod audio;
 pub mod capture;
+pub mod chunk;
 pub mod config;
 pub mod context;
 pub mod doctor;
