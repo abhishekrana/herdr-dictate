@@ -71,7 +71,7 @@ impl Default for SilenceConfig {
         Self {
             threshold: 300.0,
             trailing: Duration::from_secs_f64(2.0),
-            max_duration: Duration::from_secs(120),
+            max_duration: Duration::from_secs(600),
             min_speech: Duration::from_millis(200),
         }
     }
