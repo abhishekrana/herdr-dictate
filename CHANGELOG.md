@@ -3,6 +3,23 @@
 Notable changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) spirit and versioned with
 [SemVer](https://semver.org/).
 
+## [0.3.0] - 2026-10-11
+
+### Added
+
+- Language = "auto" detects the language, and replacements keep their spelling (523062d)
+- Parakeet-ultra is the default model (7b11d56)
+- A replacement table rewrites words the model keeps getting wrong (63ff2cb)
+- Transcribe.cpp runs the models, in place of whisper.cpp (50bee3c)
+
+### Documentation
+
+- A test build's transcribe stays away from the live model server (dbbb482)
+
+### Fixed
+
+- Speech whisper collapses to a lone dash is recovered (4d33128)
+
 ## [0.2.1] - 2026-09-24
 
 ### Added
