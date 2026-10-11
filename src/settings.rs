@@ -95,11 +95,17 @@ impl From<Silence> for SilenceConfig {
     fn from(value: Silence) -> Self {
         Self {
             threshold: value.threshold,
-            trailing: Duration::from_secs_f64(value.trailing_secs.max(0.0)),
-            max_duration: Duration::from_secs_f64(value.max_secs.max(1.0)),
-            min_speech: Duration::from_secs_f64(value.min_speech_secs.max(0.0)),
+            trailing: seconds(value.trailing_secs, 0.0),
+            max_duration: seconds(value.max_secs, 1.0),
+            min_speech: seconds(value.min_speech_secs, 0.0),
         }
     }
+}
+
+/// Seconds from the file as a duration of at least `floor`. TOML spells
+/// infinity and NaN, which `Duration::from_secs_f64` panics on.
+fn seconds(value: f64, floor: f64) -> Duration {
+    Duration::try_from_secs_f64(value.max(floor)).unwrap_or(Duration::MAX)
 }
 
 /// Typing a dictation chunk by chunk, at the speaker's pauses.
@@ -132,9 +138,9 @@ impl Default for Chunking {
 impl From<Chunking> for ChunkConfig {
     fn from(value: Chunking) -> Self {
         Self {
-            arm: Duration::from_secs_f64(value.arm_secs.max(0.0)),
-            pause: Duration::from_secs_f64(value.pause_secs.max(0.1)),
-            ceiling: Duration::from_secs_f64(value.ceiling_secs.max(1.0)),
+            arm: seconds(value.arm_secs, 0.0),
+            pause: seconds(value.pause_secs, 0.1),
+            ceiling: seconds(value.ceiling_secs, 1.0),
         }
     }
 }
@@ -362,6 +368,22 @@ mod tests {
             config.ceiling >= Duration::from_secs(1),
             "a zero ceiling would cut every frame"
         );
+    }
+
+    #[test]
+    fn infinite_and_nan_durations_do_not_panic() {
+        let settings: Settings = toml::from_str(
+            "[silence]\nmax_secs = inf\ntrailing_secs = nan\n[chunking]\nceiling_secs = inf\n",
+        )
+        .unwrap();
+        let silence: SilenceConfig = settings.silence.into();
+        assert_eq!(silence.max_duration, Duration::MAX);
+        assert_eq!(
+            silence.trailing,
+            Duration::ZERO,
+            "NaN reads as no auto-stop"
+        );
+        assert_eq!(ChunkConfig::from(settings.chunking).ceiling, Duration::MAX);
     }
 
     #[test]
