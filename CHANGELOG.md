@@ -3,6 +3,22 @@
 Notable changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) spirit and versioned with
 [SemVer](https://semver.org/).
 
+## [0.4.0] - 2026-10-13
+
+### Added
+
+- **live**: A live dictation starts the model server rather than typing whole (b5c2b8c)
+- **silence**: A recording may run for ten minutes (126e826)
+- Dictation is typed at each pause while the user is still talking (b055007)
+- **sink**: Submit presses Enter on words already typed (44f7143)
+- **chunk**: A Chunker closes chunks at the speaker's pauses (e0e18e3)
+- **capture**: Toggle --from-wav drives a dictation from a file instead of the microphone (49b8662)
+
+### Fixed
+
+- **settings**: An infinite or NaN duration in the config no longer panics (b25e827)
+- **audio**: Loudness ignores a microphone's DC offset (248163a)
+
 ## [0.3.0] - 2026-10-11
 
 ### Added
