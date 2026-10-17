@@ -91,8 +91,8 @@ daemon; the only long-lived process is the optional model server.
 - `indicator` — the pane label during a dictation, refreshed by a worker thread so a killed recorder leaves nothing
   stale; cleared on `Drop`, before the words arrive. The sink sets the cadence, since a remote refresh costs a round
   trip. It waits on a condvar rather than sleeping, so `Drop` does not hold delivery back for the rest of an interval.
-  A remote label also writes `remote.json` on that host: the phase and an expiry in its clock, never a pid, since the
-  recorder is not a process there.
+  A remote label also writes `remote.json` on that host: the phase, the pane and an expiry in its clock, never a pid,
+  since the recorder is not a process there.
 - `config` + `setup` — Herdr plugins cannot register their own keys, so `setup` appends them to the user's
   `config.toml`. It **appends text rather than re-serialising** (a round-trip would drop comments and ordering), backs
   up, writes atomically, refuses invalid TOML, and matches by action so a rebound key is not offered twice.
@@ -105,7 +105,8 @@ daemon; the only long-lived process is the optional model server.
 - `watch` — the state as JSON lines for anything drawing it outside Herdr. Each watcher binds a datagram socket in
   `$XDG_RUNTIME_DIR/<plugin id>/watchers/` (else the state dir's `watchers/`), created 0700; `session::Active` sends
   every phase change and, from the capture loop, a level (log scale, at most 20 a second) to each, non-blocking, and
-  removes a socket that refuses. Watchers re-read the state files once a second, which covers a recorder that died and
+  removes a socket that refuses. A phase line names the pane, and the machine when it is a saved remote one; a level
+  line names neither. Watchers re-read the state files once a second, which covers a recorder that died and
   `remote.json`.
 - `doctor` — one named `Check` per thing that can break, each with a remedy; exits non-zero on any `Fail`.
 

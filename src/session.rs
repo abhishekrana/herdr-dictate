@@ -179,7 +179,7 @@ impl Active {
     pub fn begin(session: Session) -> Result<Self> {
         write_state(&session)?;
         let mut watchers = Broadcaster::new(&crate::watch::watchers_dir()?);
-        watchers.send(Update::from_phase(session.phase));
+        watchers.send(&Update::for_session(&session));
         Ok(Self {
             session,
             watchers,
@@ -191,7 +191,7 @@ impl Active {
     /// how loud it is when a reading is due.
     pub fn hear(&mut self, recorded: &[i16]) {
         if let Some(level) = self.meter.hear(recorded, std::time::Instant::now()) {
-            self.watchers.send(Update::level(level));
+            self.watchers.send(&Update::level(level));
         }
     }
 
@@ -201,7 +201,7 @@ impl Active {
         if let Err(err) = write_state(&self.session) {
             tracing::debug!(%err, "could not record the transcribing phase");
         }
-        self.watchers.send(Update::Transcribing);
+        self.watchers.send(&Update::for_session(&self.session));
     }
 }
 
@@ -209,7 +209,7 @@ impl Drop for Active {
     fn drop(&mut self) {
         let _ = end(&self.session);
         // After the file is gone, so a watcher re-reading it finds it gone.
-        self.watchers.send(Update::Idle);
+        self.watchers.send(&Update::Idle);
     }
 }
 

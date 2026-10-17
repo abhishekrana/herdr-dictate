@@ -108,14 +108,17 @@ status line or anything else that draws it:
 
 ```json
 {"phase":"idle"}
-{"phase":"recording"}
+{"phase":"recording","pane":"w1:p2"}
 {"phase":"recording","level":0.42}
-{"phase":"transcribing"}
+{"phase":"transcribing","pane":"w1:p2","machine":"7339"}
 ```
 
-The first line is the state when it starts. While recording, a line carries the microphone level, 0 to 1, up to 20
-times a second; a line with no level is a phase read from the state files, or a dictation on another machine. It
-needs no Herdr and costs the recording nothing: a watcher that stops reading misses lines rather than slowing it.
+The first line is the state when it starts. A recording or transcribing line names the pane the words are going to,
+and `machine` the saved machine that pane is on when it is not this one, so something running in one pane can tell
+its own dictation from another's; a new line comes whenever the phase, the pane or the machine changes. While
+recording, level lines carry the microphone level, 0 to 1, up to 20 times a second, and belong to the pane named
+before them. A dictation delivered here from another machine names its pane and no machine. It needs no Herdr and
+costs the recording nothing: a watcher that stops reading misses lines rather than slowing it.
 
 ## Configuration
 
@@ -235,11 +238,11 @@ must succeed without a prompt, and a passphrased key needs `ssh-add`. Herdr puts
 add the machine, and that is the only thing required there. `doctor` reports all of it.
 
 While a dictation runs, that pane's label says so, and `remote.json` in the host's plugin state directory
-(`~/.local/state/herdr/plugins/abhishekrana.dictate/`) holds its phase and an expiry in the host's clock, for anything
-there - a status line - to show:
+(`~/.local/state/herdr/plugins/abhishekrana.dictate/`) holds its phase, its pane and an expiry in the host's clock, for
+anything there - a status line - to show:
 
 ```json
-{ "phase": "recording", "until": 1790176000 }
+{ "phase": "recording", "pane": "w1:p2", "until": 1790176000 }
 ```
 
 It is refreshed well inside that expiry and removed when the dictation ends, so a file past `until` is a dictation

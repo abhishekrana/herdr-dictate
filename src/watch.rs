@@ -21,7 +21,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::audio::{SilenceConfig, rms};
-use crate::session::{self, Phase};
+use crate::session::{self, Phase, Session};
 use crate::{PLUGIN_ID, Result, remote};
 
 /// The folder that holds one socket per watcher.
@@ -41,49 +41,77 @@ const RELIST: Duration = Duration::from_millis(500);
 const DATAGRAM: usize = 256;
 
 /// One line of the feed, and one datagram from the recorder.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+///
+/// A phase line names the dictation's pane, and the saved machine that pane is
+/// on when it is not this one, so a reader in one pane can tell its own
+/// dictation from another's. A level line carries only the level, 0 to 1:
+/// the phase line before it said whose it is.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "phase", rename_all = "lowercase")]
 pub enum Update {
     Idle,
-    /// `level` is 0 to 1, absent where nothing measured it: the state files,
-    /// and a dictation on another machine.
     Recording {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pane: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        machine: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         level: Option<f32>,
     },
-    Transcribing,
+    Transcribing {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pane: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        machine: Option<String>,
+    },
 }
 
 impl Update {
-    /// A recording with no level measured yet.
-    pub const RECORDING: Self = Self::Recording { level: None };
-
     /// Recording, with the microphone at `level`.
     pub fn level(level: f32) -> Self {
-        Self::Recording { level: Some(level) }
-    }
-
-    /// The update a recorder in `phase` sends.
-    pub fn from_phase(phase: Phase) -> Self {
-        match phase {
-            Phase::Recording => Self::RECORDING,
-            Phase::Transcribing => Self::Transcribing,
+        Self::Recording {
+            pane: None,
+            machine: None,
+            level: Some(level),
         }
     }
 
+    /// The phase line for a dictation into `pane`, on `machine` when that is
+    /// a saved remote one.
+    pub fn phase(phase: Phase, pane: Option<String>, machine: Option<String>) -> Self {
+        match phase {
+            Phase::Recording => Self::Recording {
+                pane,
+                machine,
+                level: None,
+            },
+            Phase::Transcribing => Self::Transcribing { pane, machine },
+        }
+    }
+
+    /// The phase line for the dictation `session` describes.
+    pub fn for_session(session: &Session) -> Self {
+        Self::phase(
+            session.phase,
+            Some(session.pane.clone()),
+            session.machine.as_ref().map(|m| m.id.clone()),
+        )
+    }
+
+    /// Whether this is a level reading rather than a phase.
+    pub fn is_level(&self) -> bool {
+        matches!(self, Self::Recording { level: Some(_), .. })
+    }
+
     /// The JSON text of one line or one datagram.
-    pub fn encode(self) -> String {
-        // Two variants and an optional float: nothing here can fail to serialise.
-        serde_json::to_string(&self).unwrap_or_else(|_| r#"{"phase":"idle"}"#.into())
+    pub fn encode(&self) -> String {
+        // Strings and an optional float: nothing here can fail to serialise.
+        serde_json::to_string(self).unwrap_or_else(|_| r#"{"phase":"idle"}"#.into())
     }
 
     /// An update from a datagram, or `None` for anything that is not one.
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         serde_json::from_slice(bytes).ok()
-    }
-
-    fn same_phase(self, other: Self) -> bool {
-        std::mem::discriminant(&self) == std::mem::discriminant(&other)
     }
 }
 
@@ -194,7 +222,7 @@ impl Broadcaster {
     }
 
     /// Send `update` to every watcher.
-    pub fn send(&mut self, update: Update) {
+    pub fn send(&mut self, update: &Update) {
         let Some(socket) = &self.socket else { return };
         let now = Instant::now();
         // A phase change is rare and must reach a watcher that started a
@@ -202,7 +230,7 @@ impl Broadcaster {
         let stale = self
             .listed
             .is_none_or(|listed| now.duration_since(listed) >= RELIST);
-        if stale || !matches!(update, Update::Recording { level: Some(_) }) {
+        if stale || !update.is_level() {
             self.peers = list(&self.dir);
             self.listed = Some(now);
         }
@@ -268,25 +296,29 @@ impl Drop for Watcher {
     }
 }
 
-/// Decides which updates become lines: every level reading, and a phase only
-/// when it differs from the last one printed.
+/// Decides which updates become lines: every level reading, and a phase line
+/// only when it differs from the last one printed, in phase, pane or machine.
 #[derive(Debug, Default)]
 pub struct Shown {
-    last: Option<Update>,
+    phase: Option<Update>,
 }
 
 impl Shown {
-    /// Whether `update` should be printed; remembers it if so.
-    pub fn admit(&mut self, update: Update) -> bool {
-        let fresh = match (self.last, update) {
-            (None, _) => true,
-            (_, Update::Recording { level: Some(_) }) => true,
-            (Some(last), update) => !last.same_phase(update),
-        };
-        if fresh {
-            self.last = Some(update);
+    /// Whether `update` should be printed; remembers a phase line if so.
+    pub fn admit(&mut self, update: &Update) -> bool {
+        if update.is_level() {
+            return true;
         }
-        fresh
+        if self.phase.as_ref() == Some(update) {
+            return false;
+        }
+        self.phase = Some(update.clone());
+        true
+    }
+
+    /// Whether the last phase line printed was recording.
+    fn recording(&self) -> bool {
+        matches!(self.phase, Some(Update::Recording { .. }))
     }
 }
 
@@ -294,12 +326,12 @@ impl Shown {
 /// one on another machine delivering here, else idle.
 pub fn current(state_dir: &Path) -> Update {
     if let Ok(Some(session)) = session::peek_at(&state_dir.join(session::STATE_FILE)) {
-        return Update::from_phase(session.phase);
+        return Update::for_session(&session);
     }
     std::fs::read_to_string(state_dir.join(remote::REMOTE_STATE))
         .ok()
-        .and_then(|text| remote_phase(&text, now_secs()))
-        .map_or(Update::Idle, Update::from_phase)
+        .and_then(|text| remote_update(&text, now_secs()))
+        .unwrap_or(Update::Idle)
 }
 
 /// `remote.json` as another machine's dictation writes it here.
@@ -308,12 +340,16 @@ struct RemoteState {
     phase: Phase,
     /// Expiry, in seconds since the epoch on this machine's clock.
     until: u64,
+    /// Absent from a file written by a version that did not name it.
+    #[serde(default)]
+    pane: Option<String>,
 }
 
-/// The phase in a `remote.json`, unless it has expired by `now`.
-fn remote_phase(text: &str, now: u64) -> Option<Phase> {
+/// The phase line for a `remote.json`, unless it has expired by `now`. The
+/// pane is on this machine, so the line names no machine.
+fn remote_update(text: &str, now: u64) -> Option<Update> {
     let state: RemoteState = serde_json::from_str(text).ok()?;
-    (state.until > now).then_some(state.phase)
+    (state.until > now).then(|| Update::phase(state.phase, state.pane, None))
 }
 
 fn now_secs() -> u64 {
@@ -337,7 +373,7 @@ pub fn run(
 ) -> Result<()> {
     let watcher = Watcher::bind(watchers)?;
     let mut shown = Shown::default();
-    let mut emit = |update: Update| -> std::io::Result<()> {
+    let mut emit = |shown: &mut Shown, update: &Update| -> std::io::Result<()> {
         if shown.admit(update) {
             writeln!(out, "{}", update.encode())?;
             out.flush()?;
@@ -346,15 +382,22 @@ pub fn run(
     };
 
     let result = (|| -> std::io::Result<()> {
-        emit(current(state_dir))?;
+        emit(&mut shown, &current(state_dir))?;
         let mut polled = Instant::now();
         while !stop.load(Ordering::Relaxed) {
             let wait = POLL.saturating_sub(polled.elapsed());
             match watcher.recv(wait) {
                 // The recorder has cleared its state file by now, and the
                 // files may still name another dictation.
-                Some(Update::Idle) => emit(current(state_dir))?,
-                Some(update) => emit(update)?,
+                Some(Update::Idle) => emit(&mut shown, &current(state_dir))?,
+                Some(update) => {
+                    // A watcher that started after the recorder's phase line
+                    // takes the pane from the state file before the level.
+                    if update.is_level() && !shown.recording() {
+                        emit(&mut shown, &current(state_dir))?;
+                    }
+                    emit(&mut shown, &update)?;
+                }
                 None => {}
             }
             if polled.elapsed() >= POLL {
@@ -362,7 +405,7 @@ pub fn run(
                 if hangup() {
                     return Ok(());
                 }
-                emit(current(state_dir))?;
+                emit(&mut shown, &current(state_dir))?;
             }
         }
         Ok(())
@@ -407,24 +450,62 @@ mod tests {
         assert!(readings.windows(2).all(|w| w[0] < w[1]), "{readings:?}");
     }
 
+    fn on(phase: Phase, pane: &str, machine: Option<&str>) -> Update {
+        Update::phase(phase, Some(pane.into()), machine.map(Into::into))
+    }
+
     #[test]
     fn updates_encode_as_the_documented_lines() {
         assert_eq!(Update::Idle.encode(), r#"{"phase":"idle"}"#);
-        assert_eq!(Update::RECORDING.encode(), r#"{"phase":"recording"}"#);
+        assert_eq!(
+            on(Phase::Recording, "w1:p2", None).encode(),
+            r#"{"phase":"recording","pane":"w1:p2"}"#
+        );
+        assert_eq!(
+            on(Phase::Transcribing, "w1:p2", Some("7339")).encode(),
+            r#"{"phase":"transcribing","pane":"w1:p2","machine":"7339"}"#
+        );
         assert_eq!(
             Update::level(0.42).encode(),
             r#"{"phase":"recording","level":0.42}"#
         );
-        assert_eq!(Update::Transcribing.encode(), r#"{"phase":"transcribing"}"#);
+        assert_eq!(
+            Update::phase(Phase::Transcribing, None, None).encode(),
+            r#"{"phase":"transcribing"}"#
+        );
+    }
+
+    #[test]
+    fn a_session_names_its_pane_and_its_machine() {
+        let mut session = Session {
+            pid: 42,
+            pane: "w1:p2".into(),
+            submit: false,
+            phase: Phase::Recording,
+            machine: None,
+        };
+        assert_eq!(
+            Update::for_session(&session),
+            on(Phase::Recording, "w1:p2", None)
+        );
+        session.phase = Phase::Transcribing;
+        session.machine = Some(session::MachineRef {
+            id: "7339".into(),
+            label: "desk".into(),
+        });
+        assert_eq!(
+            Update::for_session(&session),
+            on(Phase::Transcribing, "w1:p2", Some("7339"))
+        );
     }
 
     #[test]
     fn updates_round_trip_and_garbage_is_ignored() {
         for update in [
             Update::Idle,
-            Update::RECORDING,
+            on(Phase::Recording, "w1:p2", Some("7339")),
             Update::level(0.5),
-            Update::Transcribing,
+            on(Phase::Transcribing, "w1:p2", None),
         ] {
             assert_eq!(Update::decode(update.encode().as_bytes()), Some(update));
         }
@@ -455,16 +536,27 @@ mod tests {
     #[test]
     fn a_phase_prints_once_and_every_level_prints() {
         let mut shown = Shown::default();
-        assert!(shown.admit(Update::Idle));
-        assert!(!shown.admit(Update::Idle));
-        assert!(shown.admit(Update::RECORDING));
-        assert!(!shown.admit(Update::RECORDING));
-        assert!(shown.admit(Update::level(0.2)));
-        assert!(shown.admit(Update::level(0.2)));
-        assert!(!shown.admit(Update::RECORDING), "a re-read adds nothing");
-        assert!(shown.admit(Update::Transcribing));
-        assert!(!shown.admit(Update::Transcribing));
-        assert!(shown.admit(Update::Idle));
+        let recording = on(Phase::Recording, "w1:p2", None);
+        let transcribing = on(Phase::Transcribing, "w1:p2", None);
+        assert!(shown.admit(&Update::Idle));
+        assert!(!shown.admit(&Update::Idle));
+        assert!(shown.admit(&recording));
+        assert!(!shown.admit(&recording));
+        assert!(shown.admit(&Update::level(0.2)));
+        assert!(shown.admit(&Update::level(0.2)));
+        assert!(!shown.admit(&recording), "a re-read adds nothing");
+        assert!(shown.admit(&transcribing));
+        assert!(!shown.admit(&transcribing));
+        assert!(shown.admit(&Update::Idle));
+    }
+
+    #[test]
+    fn another_pane_or_machine_in_the_same_phase_is_a_new_line() {
+        let mut shown = Shown::default();
+        assert!(shown.admit(&on(Phase::Recording, "w1:p2", None)));
+        assert!(shown.admit(&on(Phase::Recording, "w1:p3", None)));
+        assert!(shown.admit(&on(Phase::Recording, "w1:p3", Some("7339"))));
+        assert!(!shown.admit(&on(Phase::Recording, "w1:p3", Some("7339"))));
     }
 
     #[test]
@@ -473,10 +565,11 @@ mod tests {
         let watcher = Watcher::bind(dir.path()).unwrap();
         let mut broadcaster = Broadcaster::new(dir.path());
 
-        broadcaster.send(Update::RECORDING);
-        broadcaster.send(Update::level(0.42));
+        let recording = on(Phase::Recording, "w1:p2", Some("7339"));
+        broadcaster.send(&recording);
+        broadcaster.send(&Update::level(0.42));
         let timeout = Duration::from_secs(1);
-        assert_eq!(watcher.recv(timeout), Some(Update::RECORDING));
+        assert_eq!(watcher.recv(timeout), Some(recording));
         assert_eq!(watcher.recv(timeout), Some(Update::level(0.42)));
         assert_eq!(watcher.recv(Duration::from_millis(10)), None);
     }
@@ -502,29 +595,39 @@ mod tests {
         std::fs::write(&other, "not a socket").unwrap();
         let live = Watcher::bind(watchers).unwrap();
 
-        Broadcaster::new(dir.path()).send(Update::Transcribing);
+        let transcribing = on(Phase::Transcribing, "w1:p2", None);
+        Broadcaster::new(dir.path()).send(&transcribing);
         assert!(!dead.exists(), "the dead socket is gone");
         assert!(other.exists(), "only sockets are touched");
-        assert_eq!(
-            live.recv(Duration::from_secs(1)),
-            Some(Update::Transcribing)
-        );
+        assert_eq!(live.recv(Duration::from_secs(1)), Some(transcribing));
     }
 
     #[test]
     fn no_watchers_directory_is_no_watchers() {
         let dir = tempfile::tempdir().unwrap();
         let watchers = dir.path().join(WATCHERS);
-        Broadcaster::new(&watchers).send(Update::Idle);
+        Broadcaster::new(&watchers).send(&Update::Idle);
         assert!(!watchers.exists(), "only a watcher creates it");
     }
 
     #[test]
     fn a_remote_dictation_counts_until_it_expires() {
-        let text = r#"{"phase":"transcribing","until":1000}"#;
-        assert_eq!(remote_phase(text, 999), Some(Phase::Transcribing));
-        assert_eq!(remote_phase(text, 1000), None);
-        assert_eq!(remote_phase("{\"phase\":\"recording\"", 0), None);
+        let text = r#"{"phase":"transcribing","pane":"w1:p2","until":1000}"#;
+        assert_eq!(
+            remote_update(text, 999),
+            Some(on(Phase::Transcribing, "w1:p2", None))
+        );
+        assert_eq!(remote_update(text, 1000), None);
+        assert_eq!(remote_update("{\"phase\":\"recording\"", 0), None);
+    }
+
+    #[test]
+    fn a_remote_file_from_before_the_pane_still_reads() {
+        let text = r#"{"phase":"recording","until":1000}"#;
+        assert_eq!(
+            remote_update(text, 999),
+            Some(Update::phase(Phase::Recording, None, None))
+        );
     }
 
     #[test]
@@ -536,10 +639,10 @@ mod tests {
         let until = now_secs() + 60;
         std::fs::write(
             &remote,
-            format!(r#"{{"phase":"recording","until":{until}}}"#),
+            format!(r#"{{"phase":"recording","pane":"w1:p2","until":{until}}}"#),
         )
         .unwrap();
-        assert_eq!(current(dir.path()), Update::RECORDING);
+        assert_eq!(current(dir.path()), on(Phase::Recording, "w1:p2", None));
 
         std::fs::write(&remote, r#"{"phase":"recording","until":1}"#).unwrap();
         assert_eq!(current(dir.path()), Update::Idle, "expired");

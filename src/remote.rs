@@ -349,10 +349,13 @@ pub fn label_script(target: &Target, pane: &str, label: Option<(Phase, Duration)
         Some((phase, ttl)) => {
             script.push_str(&format!("L={}\n", sq(phase.label())));
             script.push_str(&format!("A={}\n", sq(phase.as_str())));
+            // Encoded here, so a pane id is valid JSON whatever it holds.
+            let pane = serde_json::Value::from(pane).to_string();
+            script.push_str(&format!("J={}\n", sq(&pane)));
             script.push_str(&format!("W={}\n", ttl.as_millis()));
             script.push_str(
                 "{ mkdir -p \"${F%/*}\" && \
-                 printf '{\"phase\":\"%s\",\"until\":%d}\\n' \"$A\" $(( $(date +%s) + $W / 1000 )) >\"$F.tmp\" && \
+                 printf '{\"phase\":\"%s\",\"pane\":%s,\"until\":%d}\\n' \"$A\" \"$J\" $(( $(date +%s) + $W / 1000 )) >\"$F.tmp\" && \
                  mv -f \"$F.tmp\" \"$F\"; } 2>/dev/null\n\
                  exec \"$H\" --session \"$S\" pane report-metadata \"$P\" \
                  --source \"$O\" --display-agent \"$L\" --ttl-ms \"$W\"\n",
@@ -776,6 +779,7 @@ mod tests {
         let state: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
         assert_eq!(state["phase"], "transcribing");
+        assert_eq!(state["pane"], "w1:p1");
         let until = state["until"].as_u64().unwrap();
         assert!(
             (now + 11..=now + 14).contains(&until),
