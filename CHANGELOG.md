@@ -3,6 +3,21 @@
 Notable changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) spirit and versioned with
 [SemVer](https://semver.org/).
 
+## [0.5.0] - 2026-10-17
+
+### Added
+
+- **watch**: Name the pane, and its saved machine, on every phase line (09a2a2d)
+- **watch**: Stream the dictation phase and microphone level as JSON lines (90fd7bd)
+
+### Build
+
+- **deps**: Bump rustls to 0.23.46 for RUSTSEC-2026-0349 (45667ef)
+
+### Fixed
+
+- **watch**: Keep the watcher sockets in the runtime directory, private to the user (680d9d2)
+
 ## [0.4.0] - 2026-10-13
 
 ### Added
