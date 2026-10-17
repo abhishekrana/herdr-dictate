@@ -31,7 +31,7 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 cpal = "0.18"
 hound = "3.5"
-rustix = { version = "1", features = ["process"] }
+rustix = { version = "1", features = ["event", "process"] }
 sha2 = "0.11"
 signal-hook = "0.4"
 ureq = { version = "3", default-features = false, features = ["rustls"] }

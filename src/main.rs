@@ -10,7 +10,7 @@ use clap::{Parser, Subcommand};
 use herdr_dictate::{
     capture, config, context::Context, doctor, engine, indicator::Indicator, ipc::Client, live,
     server, session, session::MachineRef, session::Phase, session::Session, settings::Settings,
-    setup, sink, sink::Delivery, sink::Sink,
+    setup, sink, sink::Delivery, sink::Sink, watch,
 };
 
 #[derive(Parser)]
@@ -69,6 +69,9 @@ enum Command {
     ToggleChunking,
     /// Print one chip for the Herdr tab bar.
     Status,
+    /// Print the dictation state as JSON lines - the phase, and the microphone
+    /// level while recording - each time it changes, until stdout closes.
+    Watch,
     /// Report the wiring this plugin depends on.
     Doctor,
     /// Open the shared ssh connection to the selected machine, so the next
@@ -129,6 +132,7 @@ fn run() -> Result<ExitCode> {
         }
         Command::ToggleChunking => toggle_chunking().map(|()| ExitCode::SUCCESS),
         Command::Status => status().map(|()| ExitCode::SUCCESS),
+        Command::Watch => run_watch().map(|()| ExitCode::SUCCESS),
         Command::Doctor => Ok(run_doctor()),
         Command::Warm => warm().map(|()| ExitCode::SUCCESS),
     }
@@ -144,6 +148,26 @@ fn status() -> Result<()> {
     };
     println!("{chip}");
     Ok(())
+}
+
+/// Follow the dictation state on stdout until it closes or a signal arrives.
+fn run_watch() -> Result<()> {
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    for signal in [signal_hook::consts::SIGTERM, signal_hook::consts::SIGINT] {
+        signal_hook::flag::register(signal, std::sync::Arc::clone(&stop))
+            .context("registering the stop signals")?;
+    }
+    let dir = session::state_dir().context("finding the state directory")?;
+    let stdout = std::io::stdout();
+    // A reader that closed a pipe shows as an error on it, which polling sees
+    // without writing anything.
+    let hangup = || {
+        use rustix::event::{PollFd, PollFlags, Timespec, poll};
+        let mut fds = [PollFd::new(&stdout, PollFlags::empty())];
+        poll(&mut fds, Some(&Timespec::default())).is_ok()
+            && fds[0].revents().intersects(PollFlags::ERR | PollFlags::HUP)
+    };
+    watch::run(&dir, &mut stdout.lock(), &stop, hangup).context("watching")
 }
 
 /// Long enough to read, short enough to expire on its own.
@@ -221,8 +245,10 @@ fn toggle(submit: bool, source: &capture::Source) -> Result<ExitCode> {
             &mut active,
         );
     }
-    let recording =
-        capture::record(source, settings.silence.into(), stop, |_| {}).context("recording")?;
+    let recording = capture::record(source, settings.silence.into(), stop, |recorded| {
+        active.hear(recorded)
+    })
+    .context("recording")?;
     log_recorded(&recording, &settings);
     if recording.samples.is_empty() {
         tracing::info!("nothing recorded");
@@ -363,7 +389,8 @@ fn type_live(
 
     let mut typing = live::Live::start(settings.chunking.into(), transcribe, deliver);
     let recording = capture::record(source, settings.silence.into(), stop, |recorded| {
-        typing.hear(recorded)
+        typing.hear(recorded);
+        active.hear(recorded);
     })
     .context("recording")?;
     log_recorded(&recording, settings);

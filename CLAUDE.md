@@ -34,8 +34,8 @@ Vulkan build serves AMD, Intel and NVIDIA; it needs `spirv-headers` as well as t
 transcribe.cpp, which it does not reach. `scripts/check.sh` builds for the CPU only; the Docker step and
 `release.yml` build `--features vulkan`.
 
-`doctor`, `record --out FILE`, `transcribe FILE` (16 kHz mono WAV) and `setup --print` run outside Herdr; `toggle` and
-`deliver` need a live socket. `HERDR_DICTATE_LOG=debug` raises the level; all logging goes to stderr, which Herdr
+`doctor`, `record --out FILE`, `transcribe FILE` (16 kHz mono WAV), `setup --print` and `watch` run outside Herdr;
+`toggle` and `deliver` need a live socket. `HERDR_DICTATE_LOG=debug` raises the level; all logging goes to stderr, which Herdr
 captures into `herdr plugin log list --plugin abhishekrana.dictate`; the model server writes `server.log` in the state
 directory. Info level never carries a transcript: lines name lengths, levels and outcomes.
 
@@ -102,6 +102,10 @@ daemon; the only long-lived process is the optional model server.
 - `session` — the state file behind the two-invocation toggle. Written whole via temp + rename, and `peek` never
   writes, so `status` polling cannot destroy a running dictation. `live` is `peek` filtered to `Phase::Recording`, so
   a press during transcription does not signal the model. `end` only clears a file that still names its own pid.
+- `watch` — the state as JSON lines for anything drawing it outside Herdr. Each watcher binds a datagram socket in the
+  state dir's `watchers/`; `session::Active` sends every phase change and, from the capture loop, a level (log scale,
+  at most 20 a second) to each, non-blocking, and removes a socket that refuses. Watchers re-read the state files once
+  a second, which covers a recorder that died and `remote.json`.
 - `doctor` — one named `Check` per thing that can break, each with a remedy; exits non-zero on any `Fail`.
 
 ### Environment contract

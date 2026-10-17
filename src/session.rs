@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::watch::{Broadcaster, Meter, Update};
 use crate::{Error, PLUGIN_ID, Result};
 
 /// What the recorder is doing now. A dictation outlives the microphone.
@@ -62,15 +63,22 @@ pub struct MachineRef {
     pub label: String,
 }
 
-/// Where the recording state lives. Herdr names the directory for a plugin
-/// process; anything else has to resolve the same path, so the fallback is the
-/// directory Herdr would have given.
+/// The state file's name in the state directory.
+pub const STATE_FILE: &str = "recording.json";
+
+/// Where the recording state lives.
 pub fn state_path() -> Result<PathBuf> {
-    let dir = match std::env::var_os("HERDR_PLUGIN_STATE_DIR").filter(|v| !v.is_empty()) {
-        Some(dir) => PathBuf::from(dir),
-        None => state_home()?.join("herdr/plugins").join(PLUGIN_ID),
-    };
-    Ok(dir.join("recording.json"))
+    Ok(state_dir()?.join(STATE_FILE))
+}
+
+/// The plugin's state directory. Herdr names it for a plugin process; anything
+/// else has to resolve the same path, so the fallback is the directory Herdr
+/// would have given.
+pub fn state_dir() -> Result<PathBuf> {
+    match std::env::var_os("HERDR_PLUGIN_STATE_DIR").filter(|v| !v.is_empty()) {
+        Some(dir) => Ok(PathBuf::from(dir)),
+        None => Ok(state_home()?.join("herdr/plugins").join(PLUGIN_ID)),
+    }
 }
 
 fn state_home() -> Result<PathBuf> {
@@ -103,7 +111,8 @@ pub fn peek() -> Result<Option<Session>> {
     peek_at(&state_path()?)
 }
 
-fn peek_at(path: &std::path::Path) -> Result<Option<Session>> {
+/// What the state file at `path` says, if its process is alive. Never writes.
+pub(crate) fn peek_at(path: &std::path::Path) -> Result<Option<Session>> {
     let Ok(text) = std::fs::read_to_string(path) else {
         return Ok(None);
     };
@@ -158,15 +167,32 @@ pub fn end(session: &Session) -> Result<()> {
     }
 }
 
-/// Clears the state file however the press ends.
+/// Clears the state file however the press ends, and tells every watcher
+/// each phase as the file takes it.
 pub struct Active {
     session: Session,
+    watchers: Broadcaster,
+    meter: Meter,
 }
 
 impl Active {
     pub fn begin(session: Session) -> Result<Self> {
         write_state(&session)?;
-        Ok(Self { session })
+        let mut watchers = Broadcaster::new(&state_dir()?);
+        watchers.send(Update::from_phase(session.phase));
+        Ok(Self {
+            session,
+            watchers,
+            meter: Meter::default(),
+        })
+    }
+
+    /// Everything recorded so far, from the capture loop; tells the watchers
+    /// how loud it is when a reading is due.
+    pub fn hear(&mut self, recorded: &[i16]) {
+        if let Some(level) = self.meter.hear(recorded, std::time::Instant::now()) {
+            self.watchers.send(Update::level(level));
+        }
     }
 
     /// The microphone is closed; the model is still running.
@@ -175,12 +201,15 @@ impl Active {
         if let Err(err) = write_state(&self.session) {
             tracing::debug!(%err, "could not record the transcribing phase");
         }
+        self.watchers.send(Update::Transcribing);
     }
 }
 
 impl Drop for Active {
     fn drop(&mut self) {
         let _ = end(&self.session);
+        // After the file is gone, so a watcher re-reading it finds it gone.
+        self.watchers.send(Update::Idle);
     }
 }
 

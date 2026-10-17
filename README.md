@@ -101,6 +101,22 @@ tab_bar_right = [
 ]
 ```
 
+### Watching from elsewhere
+
+`watch` prints the dictation state as one JSON object per line, each time it changes, until its stdout closes - for a
+status line or anything else that draws it:
+
+```json
+{"phase":"idle"}
+{"phase":"recording"}
+{"phase":"recording","level":0.42}
+{"phase":"transcribing"}
+```
+
+The first line is the state when it starts. While recording, a line carries the microphone level, 0 to 1, up to 20
+times a second; a line with no level is a phase read from the state files, or a dictation on another machine. It
+needs no Herdr and costs the recording nothing: a watcher that stops reading misses lines rather than slowing it.
+
 ## Configuration
 
 Optional, at `config.toml` in `herdr plugin config-dir abhishekrana.dictate`:
