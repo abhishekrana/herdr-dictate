@@ -178,7 +178,7 @@ pub struct Active {
 impl Active {
     pub fn begin(session: Session) -> Result<Self> {
         write_state(&session)?;
-        let mut watchers = Broadcaster::new(&state_dir()?);
+        let mut watchers = Broadcaster::new(&crate::watch::watchers_dir()?);
         watchers.send(Update::from_phase(session.phase));
         Ok(Self {
             session,

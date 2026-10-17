@@ -2,16 +2,17 @@
 //!
 //! `watch` prints one JSON object per line on stdout - the phase, and while
 //! recording the microphone level - the moment either changes. There is no
-//! daemon: each watcher binds a Unix datagram socket in the state directory's
-//! `watchers/`, and the recorder sends every change to whatever sockets it
-//! finds there. A send never blocks the capture loop and a failed one is
+//! daemon: each watcher binds a Unix datagram socket in [`watchers_dir`], and
+//! the recorder sends every change to whatever sockets it finds there. A send never blocks the capture loop and a failed one is
 //! dropped, so a watcher can only ever cost the recorder a few syscalls.
 //!
 //! The state files stay the source of truth. A watcher re-reads them about
 //! once a second, which covers a recorder that died without saying so and a
 //! dictation delivered here from another machine, which sends nothing.
 
+use std::ffi::OsStr;
 use std::io::Write;
+use std::os::unix::fs::DirBuilderExt;
 use std::os::unix::net::UnixDatagram;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,9 +22,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::audio::{SilenceConfig, rms};
 use crate::session::{self, Phase};
-use crate::{Result, remote};
+use crate::{PLUGIN_ID, Result, remote};
 
-/// The directory under the state directory that holds one socket per watcher.
+/// The folder that holds one socket per watcher.
 pub const WATCHERS: &str = "watchers";
 
 /// The fastest level lines go out: about twenty a second, enough for a
@@ -135,6 +136,34 @@ impl Meter {
     }
 }
 
+/// Where the watcher sockets live: `$XDG_RUNTIME_DIR/<plugin id>/watchers`,
+/// else `watchers` in the state directory.
+///
+/// The runtime directory is the place for sockets: private to the user, and
+/// emptied at logout, so a killed watcher leaves nothing behind for long.
+pub fn watchers_dir() -> Result<PathBuf> {
+    let runtime = std::env::var_os("XDG_RUNTIME_DIR");
+    Ok(watchers_dir_in(runtime.as_deref(), &session::state_dir()?))
+}
+
+/// [`watchers_dir`] for a given runtime and state directory. The spec says a
+/// relative `XDG_RUNTIME_DIR` is to be ignored, like an unset one.
+fn watchers_dir_in(runtime: Option<&OsStr>, state_dir: &Path) -> PathBuf {
+    match runtime.map(Path::new).filter(|dir| dir.is_absolute()) {
+        Some(runtime) => runtime.join(PLUGIN_ID).join(WATCHERS),
+        None => state_dir.join(WATCHERS),
+    }
+}
+
+/// Create `dir` and any missing parent with mode 0700: whoever can write
+/// there can feed every watcher what it prints.
+fn create_private(dir: &Path) -> std::io::Result<()> {
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+}
+
 /// Sends the recorder's updates to every watcher.
 ///
 /// Nothing here reports an error: a watcher that is gone or not keeping up
@@ -148,8 +177,8 @@ pub struct Broadcaster {
 }
 
 impl Broadcaster {
-    /// A sender to the watchers under `state_dir`.
-    pub fn new(state_dir: &Path) -> Self {
+    /// A sender to the watchers whose sockets are in `dir`.
+    pub fn new(dir: &Path) -> Self {
         // Non-blocking, so a watcher whose queue is full drops the update
         // rather than stalling the capture loop.
         let socket = UnixDatagram::unbound()
@@ -157,7 +186,7 @@ impl Broadcaster {
             .inspect_err(|err| tracing::debug!(%err, "watchers will not be told"))
             .ok();
         Self {
-            dir: state_dir.join(WATCHERS),
+            dir: dir.to_owned(),
             socket,
             peers: Vec::new(),
             listed: None,
@@ -210,10 +239,9 @@ pub struct Watcher {
 }
 
 impl Watcher {
-    /// Bind this process's socket under `state_dir`.
-    pub fn bind(state_dir: &Path) -> Result<Self> {
-        let dir = state_dir.join(WATCHERS);
-        std::fs::create_dir_all(&dir)?;
+    /// Bind this process's socket in `dir`, creating it if need be.
+    pub fn bind(dir: &Path) -> Result<Self> {
+        create_private(dir)?;
         let path = dir.join(format!("{}.sock", std::process::id()));
         // Left behind by an earlier process that had this pid and was killed.
         let _ = std::fs::remove_file(&path);
@@ -294,18 +322,20 @@ fn now_secs() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
-/// Print the state, then every change, until `stop` is set or `out` closes.
+/// Print the state in `state_dir`, then every change a recorder sends to a
+/// socket in `watchers`, until `stop` is set or `out` closes.
 ///
 /// `hangup` says whether the reader of `out` has gone away; it is asked on
 /// each re-read of the state files, so a closed pipe ends the watch even when
 /// nothing changes to write.
 pub fn run(
     state_dir: &Path,
+    watchers: &Path,
     out: &mut impl Write,
     stop: &AtomicBool,
     hangup: impl Fn() -> bool,
 ) -> Result<()> {
-    let watcher = Watcher::bind(state_dir)?;
+    let watcher = Watcher::bind(watchers)?;
     let mut shown = Shown::default();
     let mut emit = |update: Update| -> std::io::Result<()> {
         if shown.admit(update) {
@@ -464,14 +494,13 @@ mod tests {
     #[test]
     fn the_socket_of_a_killed_watcher_is_removed_and_others_kept() {
         let dir = tempfile::tempdir().unwrap();
-        let watchers = dir.path().join(WATCHERS);
-        std::fs::create_dir_all(&watchers).unwrap();
+        let watchers = dir.path();
         // Bound and closed without unlinking, as a killed watcher leaves it.
         let dead = watchers.join("1.sock");
         drop(UnixDatagram::bind(&dead).unwrap());
         let other = watchers.join("notes.txt");
         std::fs::write(&other, "not a socket").unwrap();
-        let live = Watcher::bind(dir.path()).unwrap();
+        let live = Watcher::bind(watchers).unwrap();
 
         Broadcaster::new(dir.path()).send(Update::Transcribing);
         assert!(!dead.exists(), "the dead socket is gone");
@@ -485,8 +514,9 @@ mod tests {
     #[test]
     fn no_watchers_directory_is_no_watchers() {
         let dir = tempfile::tempdir().unwrap();
-        Broadcaster::new(dir.path()).send(Update::Idle);
-        assert!(!dir.path().join(WATCHERS).exists());
+        let watchers = dir.path().join(WATCHERS);
+        Broadcaster::new(&watchers).send(Update::Idle);
+        assert!(!watchers.exists(), "only a watcher creates it");
     }
 
     #[test]
@@ -529,9 +559,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut out = Vec::new();
         let stop = AtomicBool::new(true);
-        run(dir.path(), &mut out, &stop, || false).unwrap();
-        assert_eq!(String::from_utf8(out).unwrap(), "{\"phase\":\"idle\"}\n");
         let watchers = dir.path().join(WATCHERS);
+        run(dir.path(), &watchers, &mut out, &stop, || false).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), "{\"phase\":\"idle\"}\n");
         assert_eq!(
             std::fs::read_dir(watchers).unwrap().count(),
             0,
@@ -552,6 +582,45 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let stop = AtomicBool::new(false);
-        run(dir.path(), &mut Closed, &stop, || false).unwrap();
+        run(dir.path(), dir.path(), &mut Closed, &stop, || false).unwrap();
+    }
+
+    #[test]
+    fn sockets_live_in_the_runtime_dir_when_there_is_one() {
+        let state = Path::new("/state");
+        assert_eq!(
+            watchers_dir_in(Some(OsStr::new("/run/user/1000")), state),
+            Path::new("/run/user/1000").join(PLUGIN_ID).join(WATCHERS)
+        );
+    }
+
+    #[test]
+    fn an_unset_or_relative_runtime_dir_falls_back_to_the_state_dir() {
+        let state = Path::new("/state");
+        let fallback = state.join(WATCHERS);
+        assert_eq!(watchers_dir_in(None, state), fallback);
+        assert_eq!(watchers_dir_in(Some(OsStr::new("")), state), fallback);
+        assert_eq!(
+            watchers_dir_in(Some(OsStr::new("run/user")), state),
+            fallback
+        );
+    }
+
+    #[test]
+    fn every_folder_a_watcher_creates_is_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+
+        let runtime = tempfile::tempdir().unwrap();
+        let dir = watchers_dir_in(Some(runtime.path().as_os_str()), Path::new("/state"));
+        let _watcher = Watcher::bind(&dir).unwrap();
+        assert_eq!(mode(&dir), 0o700);
+        assert_eq!(mode(dir.parent().unwrap()), 0o700, "the plugin folder too");
+
+        let state = tempfile::tempdir().unwrap();
+        let dir = watchers_dir_in(None, &state.path().join("plugin"));
+        let _watcher = Watcher::bind(&dir).unwrap();
+        assert_eq!(mode(&dir), 0o700);
+        assert_eq!(mode(dir.parent().unwrap()), 0o700);
     }
 }

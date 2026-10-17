@@ -158,6 +158,7 @@ fn run_watch() -> Result<()> {
             .context("registering the stop signals")?;
     }
     let dir = session::state_dir().context("finding the state directory")?;
+    let watchers = watch::watchers_dir().context("finding the watchers directory")?;
     let stdout = std::io::stdout();
     // A reader that closed a pipe shows as an error on it, which polling sees
     // without writing anything.
@@ -167,7 +168,7 @@ fn run_watch() -> Result<()> {
         poll(&mut fds, Some(&Timespec::default())).is_ok()
             && fds[0].revents().intersects(PollFlags::ERR | PollFlags::HUP)
     };
-    watch::run(&dir, &mut stdout.lock(), &stop, hangup).context("watching")
+    watch::run(&dir, &watchers, &mut stdout.lock(), &stop, hangup).context("watching")
 }
 
 /// Long enough to read, short enough to expire on its own.

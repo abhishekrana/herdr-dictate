@@ -102,10 +102,11 @@ daemon; the only long-lived process is the optional model server.
 - `session` — the state file behind the two-invocation toggle. Written whole via temp + rename, and `peek` never
   writes, so `status` polling cannot destroy a running dictation. `live` is `peek` filtered to `Phase::Recording`, so
   a press during transcription does not signal the model. `end` only clears a file that still names its own pid.
-- `watch` — the state as JSON lines for anything drawing it outside Herdr. Each watcher binds a datagram socket in the
-  state dir's `watchers/`; `session::Active` sends every phase change and, from the capture loop, a level (log scale,
-  at most 20 a second) to each, non-blocking, and removes a socket that refuses. Watchers re-read the state files once
-  a second, which covers a recorder that died and `remote.json`.
+- `watch` — the state as JSON lines for anything drawing it outside Herdr. Each watcher binds a datagram socket in
+  `$XDG_RUNTIME_DIR/<plugin id>/watchers/` (else the state dir's `watchers/`), created 0700; `session::Active` sends
+  every phase change and, from the capture loop, a level (log scale, at most 20 a second) to each, non-blocking, and
+  removes a socket that refuses. Watchers re-read the state files once a second, which covers a recorder that died and
+  `remote.json`.
 - `doctor` — one named `Check` per thing that can break, each with a remedy; exits non-zero on any `Fail`.
 
 ### Environment contract
@@ -113,7 +114,7 @@ daemon; the only long-lived process is the optional model server.
 Herdr injects `HERDR_SOCKET_PATH`, `HERDR_BIN_PATH`, `HERDR_PLUGIN_CONTEXT_JSON`, `HERDR_PANE_ID`,
 `HERDR_PLUGIN_CONFIG_DIR` and `HERDR_PLUGIN_STATE_DIR`. Every lookup treats empty as unset and falls back to the path Herdr would have given, so the
 binary stays runnable outside Herdr — the tab bar chip runs exactly that way. `HERDR_CONFIG_PATH` overrides the user
-config location. The model server's socket lives under `XDG_RUNTIME_DIR`.
+config location. The model server's socket and the watchers' live under `XDG_RUNTIME_DIR`.
 
 ## Rules
 
