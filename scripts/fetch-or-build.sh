@@ -51,4 +51,15 @@ tar -xzf "$tmp/archive.tar.gz" -C "$tmp" "$name/herdr-dictate" || build
 mkdir -p "$(dirname "$out")"
 cp "$tmp/$name/herdr-dictate" "$out"
 chmod +x "$out"
+
+# A prebuilt binary can be unusable on this machine even though it was copied
+# and chmodded: CPU features of the builder and the user differ, and the result
+# is a SIGILL at startup rather than a clean error. Every plugin command would
+# then fail silently. Ask it for its version and build if it cannot answer.
+if ! "$out" --version >/dev/null 2>&1; then
+    echo "the v$version release build does not run on this machine; building from source" >&2
+    rm -f "$out"
+    build
+fi
+
 echo "installed the v$version release build"
